@@ -1,0 +1,397 @@
+# gadk-rhoai OpenShift Deployment
+#
+# Deploy ADK Web UI + API Server with configurable skills on OpenShift.
+#
+# Before applying, update the placeholder values:
+#   KEYCLOAK_HOST      - Your Keycloak hostname (or remove auth section for anonymous)
+#   REALM_NAME         - Your Keycloak realm name
+#   CLIENT_ID          - Your OIDC client ID
+#   LLM_API_BASE       - Your LLM endpoint (Llama Stack, Ollama, vLLM, etc.)
+#   ADK_MODEL_NAME     - Model identifier for your LLM provider
+#
+# Usage:
+#   oc new-project adk-web
+#   oc create secret docker-registry quay-pull-secret \
+#     --docker-server=quay.io --docker-username=YOUR_USER --docker-password=YOUR_PASS
+#   oc apply -f deploy/openshift.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: adk-web-config
+  labels:
+    app: adk-web
+data:
+  runtime-config.json: |
+    {
+      "backendUrl": "/api",
+      "auth": {
+        "enabled": true,
+        "authority": "https://KEYCLOAK_HOST/realms/REALM_NAME",
+        "clientId": "CLIENT_ID",
+        "scopes": "openid profile email"
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: adk-skills
+  labels:
+    app: adk-web
+data:
+  agent-instruction.md: |
+    You are a helpful assistant with specialized skills.
+
+    You have skills available that you can discover with `list_skills`.
+    When the user asks you to perform a task:
+    1. Use `list_skills` to see available skills
+    2. Load the relevant skill(s) with `load_skill`
+    3. Use `load_skill_resource` to access reference materials
+    4. Follow the skill's step-by-step instructions
+    5. Apply multiple skills together when appropriate
+
+    Always explain which skill you're using and why.
+
+  seo-checklist--SKILL.md: |
+    ---
+    name: seo-checklist
+    description: >-
+      SEO optimization checklist for blog posts. Covers title tags,
+      meta descriptions, heading structure, keyword placement,
+      and readability best practices.
+    ---
+
+    # SEO Checklist Instructions
+
+    When optimizing a blog post for SEO, check each item:
+
+    1. **Title**: 50-60 chars, primary keyword near the start
+    2. **Meta description**: 150-160 chars, includes a call-to-action
+    3. **Headings**: H2/H3 hierarchy, keywords in 2-3 headings
+    4. **First paragraph**: Primary keyword in first 100 words
+    5. **Keyword density**: 1-2%, never forced or awkward
+    6. **Paragraphs**: 2-3 sentences max, use bullet lists often
+    7. **Links**: 2-3 internal + 3-5 external to authoritative sources
+    8. **Images**: Alt text with keywords, compressed, descriptive names
+    9. **URL slug**: Short, keyword-rich, hyphenated
+
+    Review the content against each item and suggest specific improvements.
+
+  blog-writer--SKILL.md: |
+    ---
+    name: blog-writer
+    description: >-
+      Blog post writing skill with structure templates and style guidelines.
+      Guides the agent through writing well-structured, engaging technical
+      blog posts with proper formatting, section flow, and reader engagement.
+    ---
+
+    # Blog Writer Instructions
+
+    When asked to write a blog post, follow these steps:
+
+    ## Step 1: Structure
+    Use `load_skill_resource` to read `references/style-guide.md` for the writing style rules.
+
+    ## Step 2: Outline First
+    Before writing, create a brief outline with:
+    - **Hook**: Opening that grabs attention
+    - **Context**: Why this topic matters now
+    - **Core sections**: 3-5 sections that build on each other
+    - **Takeaway**: What the reader walks away knowing
+
+    ## Step 3: Write Each Section
+    For each section:
+    1. Start with a clear subheading (H2)
+    2. Lead with the key point, then support it
+    3. Include code examples where relevant
+    4. Keep paragraphs to 2-3 sentences
+    5. Use bullet lists for steps or comparisons
+
+    ## Step 4: Polish
+    - Add transition sentences between sections
+    - Ensure consistent tone throughout
+    - Verify all code examples are complete and runnable
+    - End with a clear call-to-action or next steps
+
+  blog-writer--references--style-guide.md: |
+    # Blog Writing Style Guide
+
+    ## Voice
+    - Conversational but authoritative
+    - Use "you" and "we"
+    - Share opinions backed by experience
+
+    ## Structure Rules
+    - Title: Action-oriented, includes the technology name
+    - Introduction: Max 3 paragraphs
+    - Sections: Each H2 should be independently valuable
+    - Code blocks: Always show complete, runnable code
+    - Conclusion: Summarize, suggest next steps
+
+    ## Anti-Patterns
+    - Never start with "In today's rapidly evolving..."
+    - Never use "leverage" when "use" works
+    - Never write walls of text without subheadings
+
+  content-research-writer--SKILL.md: |
+    ---
+    name: content-research-writer
+    description: >-
+      Content research and SEO writing methodology. Guides through topic
+      research, keyword identification, competitive analysis, and writing
+      SEO-optimized content that ranks well and provides genuine value.
+    ---
+
+    # Content Research & Writer Instructions
+
+    ## Phase 1: Topic Research
+    1. Identify the primary topic and break it into subtopics
+    2. List 3-5 key questions the target audience would ask
+    3. Identify the target keyword and 3-5 related keywords
+
+    ## Phase 2: SEO Optimization
+    Read `references/seo-guidelines.md` using `load_skill_resource`.
+
+    ## Phase 3: Writing
+    1. Write the hook first
+    2. Deliver on the promise of the title
+    3. Use the inverted pyramid: most important info first
+    4. End with actionable takeaways
+
+  content-research-writer--references--seo-guidelines.md: |
+    # SEO Guidelines Reference
+
+    ## Title Tag
+    - 50-60 characters, primary keyword near the beginning
+
+    ## Meta Description
+    - 150-160 characters with call-to-action
+
+    ## Content Structure
+    - First 100 words must include the primary keyword
+    - Short paragraphs (2-3 sentences max)
+
+    ## Keyword Strategy
+    - Primary keyword: 3-5 times naturally
+    - Never keyword stuff
+
+  skill-creator--SKILL.md: |
+    ---
+    name: skill-creator
+    description: >-
+      Creates new ADK-compatible skill definitions from requirements.
+      Generates complete SKILL.md files following the Agent Skills
+      specification at agentskills.io.
+    ---
+
+    # Skill Creator Instructions
+
+    When asked to create a new skill, generate a complete SKILL.md file.
+
+    Read `references/skill-spec.md` for the format specification.
+    Read `references/example-skill.md` for a working example.
+
+    Follow these rules:
+    1. Name must be kebab-case, max 64 characters
+    2. Description must be under 1024 characters
+    3. Instructions should be clear, step-by-step
+    4. Keep SKILL.md under 500 lines
+    5. Output the complete file content the user can save directly
+
+  skill-creator--references--skill-spec.md: |
+    # Agent Skills Specification (agentskills.io)
+
+    ## SKILL.md Format
+    Every skill directory must contain a SKILL.md file.
+
+    ### Frontmatter (YAML)
+    ```yaml
+    ---
+    name: my-skill-name
+    description: What this skill does.
+    ---
+    ```
+
+    ### Key Rules
+    - Directory name MUST match the name field in frontmatter
+    - Name must be kebab-case
+    - Keep instructions actionable
+
+  skill-creator--references--example-skill.md: |
+    # Example: Code Review Skill
+
+    ```markdown
+    ---
+    name: code-review
+    description: Reviews Python code for correctness, style, and performance.
+    ---
+
+    # Code Review Instructions
+
+    ## Step 1: Read the Guidelines
+    Use `load_skill_resource` to read `references/review-checklist.md`.
+
+    ## Step 2: Analyze
+    Check the code against each item in the checklist.
+
+    ## Step 3: Report
+    Provide findings organized by severity:
+    - Critical: Bugs, security issues
+    - Warning: Style violations, performance concerns
+    - Info: Suggestions for improvement
+    ```
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adk-web
+  labels:
+    app: adk-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: adk-web
+  template:
+    metadata:
+      labels:
+        app: adk-web
+    spec:
+      imagePullSecrets:
+        - name: quay-pull-secret
+      initContainers:
+        - name: setup-skills
+          image: busybox
+          command: ['sh', '-c']
+          args:
+            - |
+              cd /skills-raw
+              for f in *.md; do
+                case "$f" in
+                  agent-instruction.md) cp "$f" /skills/agent-instruction.md ;;
+                  *--*)
+                    dir=$(echo "$f" | sed 's/\.md$//' | sed 's/--/\//g')
+                    dir=$(dirname "$dir")
+                    filename=$(basename "$(echo "$f" | sed 's/\.md$//' | sed 's/--/\//g')").md
+                    mkdir -p "/skills/$dir"
+                    cp "$f" "/skills/$dir/$filename"
+                    ;;
+                esac
+              done
+              echo "Skills directory structure:"
+              find /skills -type f
+          volumeMounts:
+            - name: skills-raw
+              mountPath: /skills-raw
+            - name: skills-dir
+              mountPath: /skills
+      containers:
+        - name: adk-web
+          image: quay.io/rbrhssa/adk-web:oidc
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          volumeMounts:
+            - name: web-config
+              mountPath: /usr/share/nginx/html/assets/config/runtime-config.json
+              subPath: runtime-config.json
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+        - name: adk-api
+          image: quay.io/rbrhssa/adk-agent:skills
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: api
+          env:
+            - name: OPENAI_API_BASE
+              value: "https://LLM_API_BASE/v1"
+            - name: OPENAI_API_KEY
+              value: "not-needed"
+            - name: ADK_MODEL
+              value: "ADK_MODEL_NAME"
+            - name: SKILLS_DIR
+              value: "/skills"
+            - name: AGENT_NAME
+              value: "skills_agent"
+            - name: AGENT_DESC
+              value: "An agent powered by configurable skills."
+            - name: AGENT_INSTRUCTION_FILE
+              value: "/skills/agent-instruction.md"
+          volumeMounts:
+            - name: skills-dir
+              mountPath: /skills
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /list-apps
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: web-config
+          configMap:
+            name: adk-web-config
+        - name: skills-raw
+          configMap:
+            name: adk-skills
+        - name: skills-dir
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: adk-web
+  labels:
+    app: adk-web
+spec:
+  selector:
+    app: adk-web
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: adk-web
+  labels:
+    app: adk-web
+spec:
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  to:
+    kind: Service
+    name: adk-web
+    weight: 100
+  port:
+    targetPort: http

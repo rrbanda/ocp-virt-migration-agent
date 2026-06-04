@@ -1,0 +1,27 @@
+# Environment files with secrets
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Node (if building UI locally)
+node_modules/
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Kubernetes secrets (never commit)
+*-secret.yaml
+*-credentials.yaml

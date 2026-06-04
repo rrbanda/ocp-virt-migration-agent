@@ -1,0 +1,10 @@
+FROM python:3.11-slim
+WORKDIR /app
+
+RUN pip install --no-cache-dir "google-adk>=1.0.0,<2.0.0" litellm python-dotenv
+
+COPY agent/app/ ./app/
+
+USER 1001
+EXPOSE 8000
+CMD ["adk", "api_server", "--host", "0.0.0.0", "--port", "8000", "--allow_origins", "*", "--no-reload", "."]
