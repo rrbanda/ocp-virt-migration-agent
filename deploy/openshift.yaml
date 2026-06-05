@@ -40,208 +40,56 @@ metadata:
   labels:
     app: adk-web
 data:
+  # Skills are baked into the agent image at /skills/ via Dockerfile.
+  # This ConfigMap can override the agent instruction or add lightweight
+  # skills. For the migration agent, all 10 skills and sample data are
+  # in the image -- only the agent instruction is overridable here.
   agent-instruction.md: |
-    You are a helpful assistant with specialized skills.
+    You are the Migration Coordinator for VMware-to-OpenShift Virtualization migrations.
 
-    You have skills available that you can discover with `list_skills`.
-    When the user asks you to perform a task:
-    1. Use `list_skills` to see available skills
-    2. Load the relevant skill(s) with `load_skill`
-    3. Use `load_skill_resource` to access reference materials
-    4. Follow the skill's step-by-step instructions
-    5. Apply multiple skills together when appropriate
+    ## Operating Modes
 
-    Always explain which skill you're using and why.
+    ### Mode 1: With AAP (Live)
+    When AAP is configured, trigger real Ansible job templates for pre-migration
+    assessment and post-migration validation. Use `launch_job(template_id)` to run
+    playbooks, poll with `get_job_status`, retrieve output with `get_job_output`,
+    then analyze using skills.
 
-  seo-checklist--SKILL.md: |
-    ---
-    name: seo-checklist
-    description: >-
-      SEO optimization checklist for blog posts. Covers title tags,
-      meta descriptions, heading structure, keyword placement,
-      and readability best practices.
-    ---
+    ### Mode 2: With Sample Data (Demo/Offline)
+    When AAP is not available, or the user says "analyze the sample output":
+    - Pre-migration: `load_skill_resource` with skill `pre-migration-analyzer`,
+      resource `samples/pre-migration-playbook-output.txt`
+    - Post-migration: `load_skill_resource` with skill `post-migration-validator`,
+      resource `samples/post-migration-playbook-output.txt`
 
-    # SEO Checklist Instructions
+    ### Mode 3: User Pastes Output
+    When the user pastes Ansible playbook output, analyze it using the
+    `ansible-output-parser` skill and the appropriate analyzer/validator skill.
 
-    When optimizing a blog post for SEO, check each item:
+    ## Tools
+    - `list_vmware_vms(namespace)` -- Discover VMware VMs via MTV inventory
+    - `list_migrated_vms(namespace)` -- List VMs on OCP Virtualization
+    - `get_vm_details(namespace, vm_name)` -- Detailed VM spec
+    - `get_migration_status(namespace)` -- Check MTV migration progress
+    - `create_migration_plan(namespace, vm_name)` -- Trigger migration
+    - `get_pod_logs(namespace, pod_pattern)` -- Read pod logs
+    - `list_job_templates()` / `launch_job()` / `get_job_status()` / `get_job_output()` -- AAP
+    - `save_report_artifact(report_content, filename)` -- Save report as artifact
 
-    1. **Title**: 50-60 chars, primary keyword near the start
-    2. **Meta description**: 150-160 chars, includes a call-to-action
-    3. **Headings**: H2/H3 hierarchy, keywords in 2-3 headings
-    4. **First paragraph**: Primary keyword in first 100 words
-    5. **Keyword density**: 1-2%, never forced or awkward
-    6. **Paragraphs**: 2-3 sentences max, use bullet lists often
-    7. **Links**: 2-3 internal + 3-5 external to authoritative sources
-    8. **Images**: Alt text with keywords, compressed, descriptive names
-    9. **URL slug**: Short, keyword-rich, hyphenated
+    ## Skills (load on demand)
+    Use `list_skills` to discover skills, `load_skill` to activate them.
+    Key skills: ansible-output-parser, pre-migration-analyzer, post-migration-validator,
+    assessment-report-generator, completion-report-generator, mtv-log-analyzer,
+    capacity-analyzer, risk-assessor, batch-planner, migration-workflow.
 
-    Review the content against each item and suggest specific improvements.
+    ## Analyzing Playbook Output
+    1. Load `ansible-output-parser` to parse the raw output
+    2. Read the appropriate task map via `load_skill_resource`
+    3. Load the analyzer or validator skill for evaluation criteria
+    4. Load `assessment-report-generator` for report formatting
+    5. Save with `save_report_artifact`
 
-  blog-writer--SKILL.md: |
-    ---
-    name: blog-writer
-    description: >-
-      Blog post writing skill with structure templates and style guidelines.
-      Guides the agent through writing well-structured, engaging technical
-      blog posts with proper formatting, section flow, and reader engagement.
-    ---
-
-    # Blog Writer Instructions
-
-    When asked to write a blog post, follow these steps:
-
-    ## Step 1: Structure
-    Use `load_skill_resource` to read `references/style-guide.md` for the writing style rules.
-
-    ## Step 2: Outline First
-    Before writing, create a brief outline with:
-    - **Hook**: Opening that grabs attention
-    - **Context**: Why this topic matters now
-    - **Core sections**: 3-5 sections that build on each other
-    - **Takeaway**: What the reader walks away knowing
-
-    ## Step 3: Write Each Section
-    For each section:
-    1. Start with a clear subheading (H2)
-    2. Lead with the key point, then support it
-    3. Include code examples where relevant
-    4. Keep paragraphs to 2-3 sentences
-    5. Use bullet lists for steps or comparisons
-
-    ## Step 4: Polish
-    - Add transition sentences between sections
-    - Ensure consistent tone throughout
-    - Verify all code examples are complete and runnable
-    - End with a clear call-to-action or next steps
-
-  blog-writer--references--style-guide.md: |
-    # Blog Writing Style Guide
-
-    ## Voice
-    - Conversational but authoritative
-    - Use "you" and "we"
-    - Share opinions backed by experience
-
-    ## Structure Rules
-    - Title: Action-oriented, includes the technology name
-    - Introduction: Max 3 paragraphs
-    - Sections: Each H2 should be independently valuable
-    - Code blocks: Always show complete, runnable code
-    - Conclusion: Summarize, suggest next steps
-
-    ## Anti-Patterns
-    - Never start with "In today's rapidly evolving..."
-    - Never use "leverage" when "use" works
-    - Never write walls of text without subheadings
-
-  content-research-writer--SKILL.md: |
-    ---
-    name: content-research-writer
-    description: >-
-      Content research and SEO writing methodology. Guides through topic
-      research, keyword identification, competitive analysis, and writing
-      SEO-optimized content that ranks well and provides genuine value.
-    ---
-
-    # Content Research & Writer Instructions
-
-    ## Phase 1: Topic Research
-    1. Identify the primary topic and break it into subtopics
-    2. List 3-5 key questions the target audience would ask
-    3. Identify the target keyword and 3-5 related keywords
-
-    ## Phase 2: SEO Optimization
-    Read `references/seo-guidelines.md` using `load_skill_resource`.
-
-    ## Phase 3: Writing
-    1. Write the hook first
-    2. Deliver on the promise of the title
-    3. Use the inverted pyramid: most important info first
-    4. End with actionable takeaways
-
-  content-research-writer--references--seo-guidelines.md: |
-    # SEO Guidelines Reference
-
-    ## Title Tag
-    - 50-60 characters, primary keyword near the beginning
-
-    ## Meta Description
-    - 150-160 characters with call-to-action
-
-    ## Content Structure
-    - First 100 words must include the primary keyword
-    - Short paragraphs (2-3 sentences max)
-
-    ## Keyword Strategy
-    - Primary keyword: 3-5 times naturally
-    - Never keyword stuff
-
-  skill-creator--SKILL.md: |
-    ---
-    name: skill-creator
-    description: >-
-      Creates new ADK-compatible skill definitions from requirements.
-      Generates complete SKILL.md files following the Agent Skills
-      specification at agentskills.io.
-    ---
-
-    # Skill Creator Instructions
-
-    When asked to create a new skill, generate a complete SKILL.md file.
-
-    Read `references/skill-spec.md` for the format specification.
-    Read `references/example-skill.md` for a working example.
-
-    Follow these rules:
-    1. Name must be kebab-case, max 64 characters
-    2. Description must be under 1024 characters
-    3. Instructions should be clear, step-by-step
-    4. Keep SKILL.md under 500 lines
-    5. Output the complete file content the user can save directly
-
-  skill-creator--references--skill-spec.md: |
-    # Agent Skills Specification (agentskills.io)
-
-    ## SKILL.md Format
-    Every skill directory must contain a SKILL.md file.
-
-    ### Frontmatter (YAML)
-    ```yaml
-    ---
-    name: my-skill-name
-    description: What this skill does.
-    ---
-    ```
-
-    ### Key Rules
-    - Directory name MUST match the name field in frontmatter
-    - Name must be kebab-case
-    - Keep instructions actionable
-
-  skill-creator--references--example-skill.md: |
-    # Example: Code Review Skill
-
-    ```markdown
-    ---
-    name: code-review
-    description: Reviews Python code for correctness, style, and performance.
-    ---
-
-    # Code Review Instructions
-
-    ## Step 1: Read the Guidelines
-    Use `load_skill_resource` to read `references/review-checklist.md`.
-
-    ## Step 2: Analyze
-    Check the code against each item in the checklist.
-
-    ## Step 3: Report
-    Provide findings organized by severity:
-    - Critical: Bugs, security issues
-    - Warning: Style violations, performance concerns
-    - Info: Suggestions for improvement
-    ```
+    Always explain what you are doing. Produce structured, actionable output.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -317,31 +165,95 @@ spec:
               port: 8080
             initialDelaySeconds: 3
             periodSeconds: 5
+        # ADK Agent API server -- migration coordinator with multi-cluster support.
+        #
+        # Multi-cluster tokens:
+        #   oc create secret generic mtv-cluster-token --from-literal=token=<TOKEN> -n adk-web
+        #   oc create secret generic virt-cluster-token --from-literal=token=<TOKEN> -n adk-web
+        #   oc create secret generic aap-agent-token --from-literal=token=<TOKEN> -n adk-web
+        #
+        # When MTV_API_URL is empty, the agent uses in-cluster auth (single-cluster mode).
         - name: adk-api
-          image: quay.io/rbrhssa/adk-agent:skills
+          image: quay.io/rbrhssa/adk-agent:migration
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
               name: api
           env:
+            # -- LLM provider --
             - name: OPENAI_API_BASE
               value: "https://LLM_API_BASE/v1"
             - name: OPENAI_API_KEY
               value: "not-needed"
             - name: ADK_MODEL
               value: "ADK_MODEL_NAME"
+            # -- Agent config --
             - name: SKILLS_DIR
               value: "/skills"
             - name: AGENT_NAME
-              value: "skills_agent"
+              value: "migration_coordinator"
             - name: AGENT_DESC
-              value: "An agent powered by configurable skills."
-            - name: AGENT_INSTRUCTION_FILE
-              value: "/skills/agent-instruction.md"
+              value: "VMware-to-OCP Virt migration coordinator with automated pipeline."
+            - name: AGENT_MODE
+              value: "pipeline"
+            - name: MONITOR_MAX_ITERATIONS
+              value: "20"
+            - name: MONITOR_POLL_INTERVAL
+              value: "15"
+            # -- MTV cluster connection (empty = in-cluster) --
+            - name: MTV_API_URL
+              value: ""
+            - name: MTV_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: mtv-cluster-token
+                  key: token
+                  optional: true
+            # -- OCP Virt cluster (empty = same as MTV) --
+            - name: VIRT_API_URL
+              value: ""
+            - name: VIRT_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: virt-cluster-token
+                  key: token
+                  optional: true
+            # -- MTV inventory (empty = auto-discover from Route) --
+            - name: MTV_INVENTORY_URL
+              value: ""
+            - name: MTV_INVENTORY_TOKEN
+              value: ""
+            # -- Configurable namespace / storage defaults --
+            - name: DEFAULT_MTV_NAMESPACE
+              value: "mtv-user1"
+            - name: DEFAULT_VIRT_NAMESPACE
+              value: "vmimported-user1"
+            - name: MTV_OPERATOR_NAMESPACE
+              value: "openshift-mtv"
+            - name: TARGET_STORAGE_CLASS
+              value: "ocs-external-storagecluster-ceph-rbd"
+            # -- AAP job template IDs for pipeline automation --
+            - name: PRE_MIGRATION_TEMPLATE_ID
+              value: ""
+            - name: POST_MIGRATION_TEMPLATE_ID
+              value: ""
+            # -- AAP connection (token from Secret) --
+            - name: AAP_URL
+              value: ""
+            - name: AAP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: aap-agent-token
+                  key: token
+                  optional: true
+            - name: AAP_CA_BUNDLE
+              value: ""
           volumeMounts:
             - name: skills-dir
               mountPath: /skills
               readOnly: true
+            - name: artifact-storage
+              mountPath: /app/.adk
           resources:
             requests:
               cpu: 100m
@@ -364,6 +276,22 @@ spec:
             name: adk-skills
         - name: skills-dir
           emptyDir: {}
+        - name: artifact-storage
+          persistentVolumeClaim:
+            claimName: adk-artifacts
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: adk-artifacts
+  labels:
+    app: adk-web
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
 ---
 apiVersion: v1
 kind: Service

@@ -1,0 +1,925 @@
+STDOUT_lines :
+No STDOUT available for this Task
+
+STDERR_lines :
+No STDERR available for this Task
+Playbook Output:
+Slice 1.map.0:
+JOB partition 1 : Slice number 0:
+
+Enter passphrase for /runner/artifacts/43614296/ssh_key_data:
+Identity added: /runner/artifacts/43614296/ssh_key_data (/runner/artifacts/43614296/ssh_key_data)
+
+PLAY [Pre-migration Check] *****************************************************
+
+TASK [Gathering Facts] *********************************************************
+[DEPRECATION WARNING]: Distribution redhat 8.10 on host hostname.xyz.com
+should use /usr/libexec/platform-python, but is using /usr/bin/python for
+backward compatibility with prior Ansible releases. A future Ansible release
+will default to using the discovered platform python for this host. See https:/
+/docs.ansible.com/ansible/2.9/reference_appendices/interpreter_discovery.html
+for more information. This feature will be removed in version 2.12. Deprecation
+warnings can be disabled by setting deprecation_warnings=False in ansible.cfg.
+ok: [hostname.xyz.com]
+
+TASK [Identify current hypervisor] *********************************************
+changed: [hostname.xyz.com]
+
+TASK [Assert VM is on VMware] **************************************************
+ok: [hostname.xyz.com] => {
+"changed": false,
+"msg": "All assertions passed"
+}
+
+TASK [Operating System] ********************************************************
+ok: [hostname.xyz.com] => {
+"msg": "RedHat 8.10"
+}
+
+TASK [Verify Valid OS] *********************************************************
+ok: [hostname.xyz.com] => {
+"changed": false,
+"msg": "All assertions passed"
+}
+
+TASK [Get osvmig_ dirs from var opt] *******************************************
+ok: [hostname.xyz.com]
+
+TASK [Delete osvmig_ dirs] *****************************************************
+changed: [hostname.xyz.com] => (item={'path': '/var/opt/osvmig_eqqsm', 'mode': '0755', 'isdir': True, 'ischr': False, 'isblk': False, 'isreg': False, 'isfifo': False, 'islnk': False, 'issock': False, 'uid': 603196, 'gid': 12608, 'size': 4096, 'inode': 753, 'dev': 64776, 'nlink': 2, 'atime': 1772546961.7185185, 'mtime': 1771433853.086012, 'ctime': 1771433860.382113, 'gr_name': 'ansible', 'pw_name': 'svcansible', 'wusr': True, 'rusr': True, 'xusr': True, 'wgrp': False, 'rgrp': True, 'xgrp': True, 'woth': False, 'roth': True, 'xoth': True, 'isuid': False, 'isgid': False})
+
+TASK [Create migration working directory] **************************************
+changed: [hostname.xyz.com]
+
+TASK [Detect active nfs mount] *************************************************
+ok: [hostname.xyz.com]
+
+TASK [Check if system has NFS mount (is-enabled)] ******************************
+skipping: [hostname.xyz.com]
+
+TASK [Enable remote-fs.target if disabled] *************************************
+skipping: [hostname.xyz.com]
+
+TASK [Start target] ************************************************************
+skipping: [hostname.xyz.com]
+
+TASK [Check if vmware-guest-tools installed] ***********************************
+changed: [hostname.xyz.com]
+
+TASK [Check if vmtoolsd.service is running] ************************************
+changed: [hostname.xyz.com]
+
+TASK [Read in /proc/cmdline] ***************************************************
+skipping: [hostname.xyz.com]
+
+TASK [List kernelopts from proccmdline in Red Hat] *****************************
+skipping: [hostname.xyz.com]
+
+TASK [Debug proccmdline_list Red Hat] ******************************************
+skipping: [hostname.xyz.com]
+
+TASK [Read in grub2-mkconfig and get output Red Hat 7] *************************
+skipping: [hostname.xyz.com]
+
+TASK [Set grub2-mkconfig list] *************************************************
+skipping: [hostname.xyz.com]
+
+TASK [Debug grub2-mkconfig Red Hat 7] ******************************************
+skipping: [hostname.xyz.com]
+
+TASK [Find missing parameters from grubgen_list compared to proccmdline_list] ***
+skipping: [hostname.xyz.com]
+
+TASK [Debug new_kernelopts] ****************************************************
+skipping: [hostname.xyz.com]
+
+TASK [Preserve a copy of /etc/default/grub] ************************************
+skipping: [hostname.xyz.com]
+
+TASK [Ensure all kernel parameters are present in /etc/default/grub] ***********
+skipping: [hostname.xyz.com]
+
+TASK [Preserve a copy of /etc/grub2.cfg Redhat] ********************************
+skipping: [hostname.xyz.com]
+
+TASK [List kernel packages Red Hat] ********************************************
+skipping: [hostname.xyz.com]
+
+TASK [Assert running kernel is installed package] ******************************
+skipping: [hostname.xyz.com]
+
+TASK [Stat grubenv] ************************************************************
+skipping: [hostname.xyz.com]
+
+TASK [grubenv is exactly 1024 bytes] *******************************************
+skipping: [hostname.xyz.com]
+
+TASK [Check if rpmdb_fix.sh already exists] ************************************
+skipping: [hostname.xyz.com]
+
+TASK [Copy rpmdb_fix.sh to VM and make it executable] **************************
+skipping: [hostname.xyz.com]
+
+TASK [Execute rpmdb_fix.sh] ****************************************************
+skipping: [hostname.xyz.com]
+
+TASK [Display rmpdb_result] ****************************************************
+skipping: [hostname.xyz.com]
+
+TASK [Read in /proc/cmdline] ***************************************************
+ok: [hostname.xyz.com]
+
+TASK [List kernelopts from proccmdline in Red Hat or Rocky] ********************
+ok: [hostname.xyz.com]
+
+TASK [Debug proccmdline_list Red Hat or Rocky] *********************************
+ok: [hostname.xyz.com] => {
+"proccmdline_list": [
+"root=/dev/mapper/rootvg-rootlv",
+"ro",
+"resume=/dev/mapper/rootvg-swaplv",
+"rd.lvm.lv=rootvg/rootlv",
+"rd.lvm.lv=rootvg/swaplv",
+"net.ifnames=0",
+"audit=1",
+"crashkernel=auto"
+]
+}
+
+TASK [Read in grub2-mkconfig and get output Red Hat or Rocky 8 or 9] ***********
+changed: [hostname.xyz.com]
+
+TASK [Set grub2-mkconfig list] *************************************************
+ok: [hostname.xyz.com]
+
+TASK [Debug grub2-mkconfig Red Hat or Rocky] ***********************************
+ok: [hostname.xyz.com] => {
+"grubgen_list": [
+"root=/dev/mapper/rootvg-rootlv",
+"ro",
+"resume=/dev/mapper/rootvg-swaplv",
+"rd.lvm.lv=rootvg/rootlv",
+"rd.lvm.lv=rootvg/swaplv",
+"net.ifnames=0",
+"audit=1",
+"crashkernel=auto"
+]
+}
+
+TASK [Find missing parameters from grubgen_list compared to proccmdline_list] ***
+ok: [hostname.xyz.com]
+
+TASK [Debug new_kernelopts] ****************************************************
+ok: [hostname.xyz.com] => {
+"new_kernelopts": []
+}
+
+TASK [Preserve a copy of /etc/default/grub] ************************************
+changed: [hostname.xyz.com]
+
+TASK [Ensure all kernel parameters are present in /etc/default/grub] ***********
+skipping: [hostname.xyz.com]
+
+TASK [Preserve a copy of /etc/grub2.cfg Redhat or Rocky] ***********************
+changed: [hostname.xyz.com]
+
+TASK [List kernel packages Red Hat or Rocky] ***********************************
+[WARNING]: Consider using the yum, dnf or zypper module rather than running
+'rpm'. If you need to use command because yum, dnf or zypper is insufficient
+you can add 'warn: false' to this command task or set 'command_warnings=False'
+in ansible.cfg to get rid of this message.
+changed: [hostname.xyz.com]
+
+TASK [Assert running kernel is installed package] ******************************
+ok: [hostname.xyz.com] => {
+"changed": false,
+"msg": "All assertions passed"
+}
+
+TASK [Stat grubenv] ************************************************************
+ok: [hostname.xyz.com]
+
+TASK [grubenv is exactly 1024 bytes] *******************************************
+ok: [hostname.xyz.com] => {
+"changed": false,
+"msg": "All assertions passed"
+}
+
+TASK [Check if rpmdb_fix.sh already exists] ************************************
+ok: [hostname.xyz.com]
+
+TASK [Copy rpmdb_fix.sh to VM and make it executable] **************************
+changed: [hostname.xyz.com]
+
+TASK [Execute rpmdb_fix.sh] ****************************************************
+changed: [hostname.xyz.com]
+
+TASK [Display rmpdb_result] ****************************************************
+ok: [hostname.xyz.com] => {
+"rmpdb_result.stdout": "Will check for RPMDB Corruption as well\nTue Mar 3 16:10:33 GMT 2026: Host hostname.xyz.com uptime is 6d 8h 47m 34s.\nvar filesystem is good. Current usage 8%. [RPM005]\nTue Mar 3 16:10:33 GMT 2026: Check for hung processes\nTotal hung rpm processes are: 0\nTotal hung yum processes are: 0\nTotal hung subscription manager processes are: 0\nTue Mar 3 16:10:33 GMT 2026: No hung process found. [RPM006]\nChecking for RPMDB corruption\nRPMDB not corrupted\nTue Mar 3 16:10:44 GMT 2026: Rebuilding RPMDB\nTue Mar 3 16:10:46 GMT 2026: RPMDB Rebuild successful\nTue Mar 3 16:10:47 GMT 2026: rpm -qa command generated output. Total 583 packages."
+}
+
+TASK [Check partitions for bootflag] *******************************************
+changed: [hostname.xyz.com]
+
+TASK [Read in grub env Ubuntu] *************************************************
+skipping: [hostname.xyz.com]
+
+TASK [debug running Ubuntu] ****************************************************
+skipping: [hostname.xyz.com]
+
+TASK [Preserve a copy of /boot/grub/grub.cfg Ubuntu] ***************************
+skipping: [hostname.xyz.com]
+
+TASK [Stat grubenv] ************************************************************
+skipping: [hostname.xyz.com]
+
+TASK [grubenv is exactly 1024 bytes] *******************************************
+skipping: [hostname.xyz.com]
+
+TASK [Write AnsibleFacts to file] **********************************************
+changed: [hostname.xyz.com]
+
+TASK [CPU and Memory] **********************************************************
+ok: [hostname.xyz.com] => {
+"msg": "cpu: 4, memory_mb: 15729"
+}
+
+TASK [Network Interfaces] ******************************************************
+ok: [hostname.xyz.com] => (item=lo) => {
+"msg": "lo []: {'address': '127.0.0.1', 'broadcast': '', 'netmask': '255.0.0.0', 'network': '127.0.0.0'}"
+}
+ok: [hostname.xyz.com] => (item=eth0) => {
+"msg": "eth0 [00:50:56:ab:c5:04]: {'address': 'REDACTED', 'broadcast': '', 'netmask': '', 'network': ''}"
+}
+
+TASK [Verify fstab does not contain /dev/sd] ***********************************
+ok: [hostname.xyz.com]
+
+TASK [Verify Recent Reboot (Uptime < 30days)] **********************************
+ok: [hostname.xyz.com] => {
+"changed": false,
+"msg": "All assertions passed"
+}
+
+TASK [Check if qemu-guest-agent can be installed by MTV] ***********************
+skipping: [hostname.xyz.com]
+
+TASK [Ensure selinux-policy-targeted installed RHEL7] **************************
+skipping: [hostname.xyz.com]
+
+TASK [Protect packages from autoremove of open-vm-tools RHEL7] *****************
+skipping: [hostname.xyz.com] => (item=xmlsec1-openssl)
+skipping: [hostname.xyz.com] => (item=xmlsec1)
+skipping: [hostname.xyz.com] => (item=fuse)
+skipping: [hostname.xyz.com] => (item=fuse-common)
+skipping: [hostname.xyz.com] => (item=fuse-libs)
+skipping: [hostname.xyz.com] => (item=libxslt)
+skipping: [hostname.xyz.com] => (item=libmspack)
+skipping: [hostname.xyz.com] => (item=libffi)
+skipping: [hostname.xyz.com] => (item=libffi-devel)
+skipping: [hostname.xyz.com] => (item=pciutils)
+
+TASK [Get current timezone RHEL7] **********************************************
+skipping: [hostname.xyz.com]
+
+TASK [Check LocalRTC if PDT timezone RHEL7] ************************************
+skipping: [hostname.xyz.com]
+
+TASK [Fix LocalRTC if necessary] ***********************************************
+skipping: [hostname.xyz.com]
+
+TASK [Check if qemu-guest-agent can be installed by MTV] ***********************
+skipping: [hostname.xyz.com]
+
+TASK [Ensure selinux-policy-targeted installed CentOS7] ************************
+skipping: [hostname.xyz.com]
+
+TASK [Protect packages from autoremove of open-vm-tools CentOS7] ***************
+skipping: [hostname.xyz.com] => (item=xmlsec1-openssl)
+skipping: [hostname.xyz.com] => (item=xmlsec1)
+skipping: [hostname.xyz.com] => (item=fuse)
+skipping: [hostname.xyz.com] => (item=fuse-common)
+skipping: [hostname.xyz.com] => (item=fuse-libs)
+skipping: [hostname.xyz.com] => (item=libxslt)
+skipping: [hostname.xyz.com] => (item=libmspack)
+skipping: [hostname.xyz.com] => (item=libffi)
+skipping: [hostname.xyz.com] => (item=libffi-devel)
+skipping: [hostname.xyz.com] => (item=pciutils)
+
+TASK [Get current timezone CentOS7] ********************************************
+skipping: [hostname.xyz.com]
+
+TASK [Check LocalRTC if PDT timezone CentOS7] **********************************
+skipping: [hostname.xyz.com]
+
+TASK [Fix LocalRTC if necessary] ***********************************************
+skipping: [hostname.xyz.com]
+
+TASK [Check if qemu-guest-agent can be installed by MTV] ***********************
+changed: [hostname.xyz.com]
+
+TASK [Ensure selinux-policy-targeted installed RHEL8] **************************
+ok: [hostname.xyz.com]
+
+TASK [Protect packages from autoremove of open-vm-tools RHEL8] *****************
+changed: [hostname.xyz.com] => (item=xmlsec1-openssl)
+changed: [hostname.xyz.com] => (item=xmlsec1)
+changed: [hostname.xyz.com] => (item=fuse)
+changed: [hostname.xyz.com] => (item=fuse-common)
+changed: [hostname.xyz.com] => (item=fuse-libs)
+changed: [hostname.xyz.com] => (item=libxslt)
+changed: [hostname.xyz.com] => (item=libmspack)
+changed: [hostname.xyz.com] => (item=libffi)
+[WARNING]: Consider using the dnf module rather than running 'dnf'. If you
+need to use command because dnf is insufficient you can add 'warn: false' to
+this command task or set 'command_warnings=False' in ansible.cfg to get rid of
+this message.
+failed: [hostname.xyz.com] (item=libffi-devel) => {"ansible_loop_var": "item", "changed": true, "cmd": "dnf mark install libffi-devel", "delta": "0:00:00.688141", "end": "2026-03-03 16:11:15.188923", "item": "libffi-devel", "msg": "non-zero return code", "rc": 1, "start": "2026-03-03 16:11:14.500782", "stderr": "Error:\nPackage libffi-devel is not installed.", "stderr_lines": ["Error:", "Package libffi-devel is not installed."], "stdout": "Updating Subscription Management repositories.", "stdout_lines": ["Updating Subscription Management repositories."]}
+changed: [hostname.xyz.com] => (item=pciutils)
+...ignoring
+
+TASK [Ensure augeas tool installed RHEL8] **************************************
+changed: [hostname.xyz.com]
+
+TASK [Augtool check fstab for errors] ******************************************
+changed: [hostname.xyz.com]
+
+TASK [Ensure augeas tool uninstalled RHEL8] ************************************
+changed: [hostname.xyz.com]
+
+TASK [Get current timezone RHEL8] **********************************************
+changed: [hostname.xyz.com]
+
+TASK [Check LocalRTC if PDT timezone RHEL8] ************************************
+skipping: [hostname.xyz.com]
+
+TASK [Fix LocalRTC if necessary] ***********************************************
+skipping: [hostname.xyz.com]
+
+TASK [Check if qemu-guest-agent can be installed by MTV] ***********************
+skipping: [hostname.xyz.com]
+
+TASK [Ensure selinux-policy-targeted installed RHEL9] **************************
+skipping: [hostname.xyz.com]
+
+TASK [Protect packages from autoremove of open-vm-tools RHEL9] *****************
+skipping: [hostname.xyz.com] => (item=xmlsec1-openssl)
+skipping: [hostname.xyz.com] => (item=xmlsec1)
+skipping: [hostname.xyz.com] => (item=fuse)
+skipping: [hostname.xyz.com] => (item=fuse-common)
+skipping: [hostname.xyz.com] => (item=fuse-libs)
+skipping: [hostname.xyz.com] => (item=libxslt)
+skipping: [hostname.xyz.com] => (item=libmspack)
+skipping: [hostname.xyz.com] => (item=libffi)
+skipping: [hostname.xyz.com] => (item=libffi-devel)
+skipping: [hostname.xyz.com] => (item=pciutils)
+
+TASK [Ensure augeas tool installed RHEL9] **************************************
+skipping: [hostname.xyz.com]
+
+TASK [Augtool check fstab for errors] ******************************************
+skipping: [hostname.xyz.com]
+
+TASK [Ensure augeas tool uninstalled RHEL9] ************************************
+skipping: [hostname.xyz.com]
+
+TASK [Get current timezone RHEL9] **********************************************
+skipping: [hostname.xyz.com]
+
+TASK [Check LocalRTC if PDT timezone RHEL9] ************************************
+skipping: [hostname.xyz.com]
+
+TASK [Fix LocalRTC if necessary] ***********************************************
+skipping: [hostname.xyz.com]
+
+TASK [Check if qemu-guest-agent can be installed by MTV] ***********************
+skipping: [hostname.xyz.com]
+
+TASK [Ensure selinux-policy-targeted installed Rocky8] *************************
+skipping: [hostname.xyz.com]
+
+TASK [Protect packages from autoremove of open-vm-tools Rocky8] ****************
+skipping: [hostname.xyz.com] => (item=xmlsec1-openssl)
+skipping: [hostname.xyz.com] => (item=xmlsec1)
+skipping: [hostname.xyz.com] => (item=fuse)
+skipping: [hostname.xyz.com] => (item=fuse-common)
+skipping: [hostname.xyz.com] => (item=fuse-libs)
+skipping: [hostname.xyz.com] => (item=libxslt)
+skipping: [hostname.xyz.com] => (item=libmspack)
+skipping: [hostname.xyz.com] => (item=libffi)
+skipping: [hostname.xyz.com] => (item=libffi-devel)
+skipping: [hostname.xyz.com] => (item=pciutils)
+
+TASK [Ensure augeas tool installed Rocky8] *************************************
+skipping: [hostname.xyz.com]
+
+TASK [Augtool check fstab for errors] ******************************************
+skipping: [hostname.xyz.com]
+
+TASK [Ensure augeas tool uninstalled Rocky8] ***********************************
+skipping: [hostname.xyz.com]
+
+TASK [Get current timezone Rocky8] *********************************************
+skipping: [hostname.xyz.com]
+
+TASK [Check LocalRTC if PDT timezone Rocky8] ***********************************
+skipping: [hostname.xyz.com]
+
+TASK [Fix LocalRTC if necessary] ***********************************************
+skipping: [hostname.xyz.com]
+
+TASK [Check if qemu-guest-agent can be installed by MTV] ***********************
+skipping: [hostname.xyz.com]
+
+TASK [Ensure selinux-policy-targeted installed Rocky9] *************************
+skipping: [hostname.xyz.com]
+
+TASK [Protect packages from autoremove of open-vm-tools Rocky9] ****************
+skipping: [hostname.xyz.com] => (item=xmlsec1-openssl)
+skipping: [hostname.xyz.com] => (item=xmlsec1)
+skipping: [hostname.xyz.com] => (item=fuse)
+skipping: [hostname.xyz.com] => (item=fuse-common)
+skipping: [hostname.xyz.com] => (item=fuse-libs)
+skipping: [hostname.xyz.com] => (item=libxslt)
+skipping: [hostname.xyz.com] => (item=libmspack)
+skipping: [hostname.xyz.com] => (item=libffi)
+skipping: [hostname.xyz.com] => (item=libffi-devel)
+skipping: [hostname.xyz.com] => (item=pciutils)
+
+TASK [Ensure augeas tool installed Rocky9] *************************************
+skipping: [hostname.xyz.com]
+
+TASK [Augtool check fstab for errors] ******************************************
+skipping: [hostname.xyz.com]
+
+TASK [Ensure augeas tool uninstalled Rocky9] ***********************************
+skipping: [hostname.xyz.com]
+
+TASK [Get current timezone Rocky9] *********************************************
+skipping: [hostname.xyz.com]
+
+TASK [Check LocalRTC if PDT timezone Rocky9] ***********************************
+skipping: [hostname.xyz.com]
+
+TASK [Fix LocalRTC if necessary] ***********************************************
+skipping: [hostname.xyz.com]
+
+TASK [Check if qemu-guest-agent can be installed by MTV] ***********************
+skipping: [hostname.xyz.com]
+
+TASK [Check if check-filesystem-usage.ksh already exists] **********************
+ok: [hostname.xyz.com]
+
+TASK [Copy check-filesystem-usage.ksh to VM and make it executable] ************
+changed: [hostname.xyz.com]
+
+TASK [Execute check-filesystem-usage.ksh] **************************************
+changed: [hostname.xyz.com]
+
+TASK [Display filesystem_usage_results] ****************************************
+ok: [hostname.xyz.com] => {
+"filesystem_usage_results.stdout": "The largest file/dir in is ./.ansible/tmp which is owned by root....\n\nPlease assign the Ticket to APPS Team."
+}
+
+TASK [Mount points] ************************************************************
+ok: [hostname.xyz.com] => {
+"msg": [
+{
+"block_available": 1949391,
+"block_size": 4096,
+"block_total": 2618880,
+"block_used": 669489,
+"device": "/dev/mapper/rootvg-rootlv",
+"fstype": "xfs",
+"inode_available": 5201922,
+"inode_total": 5242880,
+"inode_used": 40958,
+"mount": "/",
+"options": "rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 7984705536,
+"size_total": 10726932480,
+"uuid": "c4d4f4dd-16b6-4472-9029-80a73095489a"
+},
+{
+"block_available": 188070,
+"block_size": 4096,
+"block_total": 254434,
+"block_used": 66364,
+"device": "/dev/sda1",
+"fstype": "xfs",
+"inode_available": 511682,
+"inode_total": 512000,
+"inode_used": 318,
+"mount": "/boot",
+"options": "rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 770334720,
+"size_total": 1042161664,
+"uuid": "5aa31add-9c4f-431d-86a5-0f3e86022c3c"
+},
+{
+"block_available": 2071555,
+"block_size": 4096,
+"block_total": 2094592,
+"block_used": 23037,
+"device": "/dev/mapper/rootvg-tmplv",
+"fstype": "xfs",
+"inode_available": 4194233,
+"inode_total": 4194304,
+"inode_used": 71,
+"mount": "/tmp",
+"options": "rw,seclabel,nosuid,nodev,noexec,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 8485089280,
+"size_total": 8579448832,
+"uuid": "cfe9a278-c8d8-47c7-abd2-096d098805a0"
+},
+{
+"block_available": 2415654,
+"block_size": 4096,
+"block_total": 2618880,
+"block_used": 203226,
+"device": "/dev/mapper/rootvg-varlv",
+"fstype": "xfs",
+"inode_available": 5240320,
+"inode_total": 5242880,
+"inode_used": 2560,
+"mount": "/var",
+"options": "rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 9894518784,
+"size_total": 10726932480,
+"uuid": "7674ca6b-e20c-4f29-94f8-e6a3e055b633"
+},
+{
+"block_available": 502905,
+"block_size": 4096,
+"block_total": 521728,
+"block_used": 18823,
+"device": "/dev/mapper/rootvg-homelv",
+"fstype": "xfs",
+"inode_available": 1048483,
+"inode_total": 1048576,
+"inode_used": 93,
+"mount": "/home",
+"options": "rw,seclabel,nodev,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 2059898880,
+"size_total": 2136997888,
+"uuid": "a78c2889-fc61-4d8c-ba3d-2032f70953d8"
+},
+{
+"block_available": 2071555,
+"block_size": 4096,
+"block_total": 2094592,
+"block_used": 23037,
+"device": "/dev/mapper/rootvg-tmplv",
+"fstype": "xfs",
+"inode_available": 4194233,
+"inode_total": 4194304,
+"inode_used": 71,
+"mount": "/var/tmp",
+"options": "rw,seclabel,nosuid,nodev,noexec,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 8485089280,
+"size_total": 8579448832,
+"uuid": "cfe9a278-c8d8-47c7-abd2-096d098805a0"
+},
+{
+"block_available": 2251987,
+"block_size": 4096,
+"block_total": 2618880,
+"block_used": 366893,
+"device": "/dev/mapper/rootvg-varloglv",
+"fstype": "xfs",
+"inode_available": 5242670,
+"inode_total": 5242880,
+"inode_used": 210,
+"mount": "/var/log",
+"options": "rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 9224138752,
+"size_total": 10726932480,
+"uuid": "e56b081b-c6fe-40fa-9758-df3189009db1"
+},
+{
+"block_available": 3267025,
+"block_size": 4096,
+"block_total": 3929600,
+"block_used": 662575,
+"device": "/dev/mapper/rootvg-optlv",
+"fstype": "xfs",
+"inode_available": 7861193,
+"inode_total": 7864320,
+"inode_used": 3127,
+"mount": "/opt",
+"options": "rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 13381734400,
+"size_total": 16095641600,
+"uuid": "f3a4b64f-2466-4aab-971d-c2599f194ef9"
+},
+{
+"block_available": 12869122,
+"block_size": 4096,
+"block_total": 13100800,
+"block_used": 231678,
+"device": "/dev/mapper/appvg-optclickhouselv",
+"fstype": "xfs",
+"inode_available": 26214366,
+"inode_total": 26214400,
+"inode_used": 34,
+"mount": "/opt/clickhouse",
+"options": "rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 52711923712,
+"size_total": 53660876800,
+"uuid": "4b731a6a-7b78-4582-92f7-dfadfe04631a"
+},
+{
+"block_available": 12855933,
+"block_size": 4096,
+"block_total": 13100800,
+"block_used": 244867,
+"device": "/dev/mapper/appvg-optclickhouseloglv",
+"fstype": "xfs",
+"inode_available": 26214391,
+"inode_total": 26214400,
+"inode_used": 9,
+"mount": "/opt/clickhouse/log",
+"options": "rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 52657901568,
+"size_total": 53660876800,
+"uuid": "49ed50a3-9950-40fb-a85e-0c3e4edd929d"
+}
+]
+}
+
+TASK [Root mount point freespace > 100MB] **************************************
+ok: [hostname.xyz.com] => (item={'mount': '/', 'device': '/dev/mapper/rootvg-rootlv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 10726932480, 'size_available': 7984705536, 'block_size': 4096, 'block_total': 2618880, 'block_available': 1949391, 'block_used': 669489, 'inode_total': 5242880, 'inode_available': 5201922, 'inode_used': 40958, 'uuid': 'c4d4f4dd-16b6-4472-9029-80a73095489a'}) => {
+"ansible_loop_var": "item",
+"changed": false,
+"item": {
+"block_available": 1949391,
+"block_size": 4096,
+"block_total": 2618880,
+"block_used": 669489,
+"device": "/dev/mapper/rootvg-rootlv",
+"fstype": "xfs",
+"inode_available": 5201922,
+"inode_total": 5242880,
+"inode_used": 40958,
+"mount": "/",
+"options": "rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 7984705536,
+"size_total": 10726932480,
+"uuid": "c4d4f4dd-16b6-4472-9029-80a73095489a"
+},
+"msg": "All assertions passed"
+}
+skipping: [hostname.xyz.com] => (item={'mount': '/boot', 'device': '/dev/sda1', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 1042161664, 'size_available': 770334720, 'block_size': 4096, 'block_total': 254434, 'block_available': 188070, 'block_used': 66364, 'inode_total': 512000, 'inode_available': 511682, 'inode_used': 318, 'uuid': '5aa31add-9c4f-431d-86a5-0f3e86022c3c'})
+skipping: [hostname.xyz.com] => (item={'mount': '/tmp', 'device': '/dev/mapper/rootvg-tmplv', 'fstype': 'xfs', 'options': 'rw,seclabel,nosuid,nodev,noexec,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 8579448832, 'size_available': 8485089280, 'block_size': 4096, 'block_total': 2094592, 'block_available': 2071555, 'block_used': 23037, 'inode_total': 4194304, 'inode_available': 4194233, 'inode_used': 71, 'uuid': 'cfe9a278-c8d8-47c7-abd2-096d098805a0'})
+skipping: [hostname.xyz.com] => (item={'mount': '/var', 'device': '/dev/mapper/rootvg-varlv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 10726932480, 'size_available': 9894518784, 'block_size': 4096, 'block_total': 2618880, 'block_available': 2415654, 'block_used': 203226, 'inode_total': 5242880, 'inode_available': 5240320, 'inode_used': 2560, 'uuid': '7674ca6b-e20c-4f29-94f8-e6a3e055b633'})
+skipping: [hostname.xyz.com] => (item={'mount': '/home', 'device': '/dev/mapper/rootvg-homelv', 'fstype': 'xfs', 'options': 'rw,seclabel,nodev,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 2136997888, 'size_available': 2059898880, 'block_size': 4096, 'block_total': 521728, 'block_available': 502905, 'block_used': 18823, 'inode_total': 1048576, 'inode_available': 1048483, 'inode_used': 93, 'uuid': 'a78c2889-fc61-4d8c-ba3d-2032f70953d8'})
+skipping: [hostname.xyz.com] => (item={'mount': '/var/tmp', 'device': '/dev/mapper/rootvg-tmplv', 'fstype': 'xfs', 'options': 'rw,seclabel,nosuid,nodev,noexec,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 8579448832, 'size_available': 8485089280, 'block_size': 4096, 'block_total': 2094592, 'block_available': 2071555, 'block_used': 23037, 'inode_total': 4194304, 'inode_available': 4194233, 'inode_used': 71, 'uuid': 'cfe9a278-c8d8-47c7-abd2-096d098805a0'})
+skipping: [hostname.xyz.com] => (item={'mount': '/var/log', 'device': '/dev/mapper/rootvg-varloglv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 10726932480, 'size_available': 9224138752, 'block_size': 4096, 'block_total': 2618880, 'block_available': 2251987, 'block_used': 366893, 'inode_total': 5242880, 'inode_available': 5242670, 'inode_used': 210, 'uuid': 'e56b081b-c6fe-40fa-9758-df3189009db1'})
+skipping: [hostname.xyz.com] => (item={'mount': '/opt', 'device': '/dev/mapper/rootvg-optlv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 16095641600, 'size_available': 13381734400, 'block_size': 4096, 'block_total': 3929600, 'block_available': 3267025, 'block_used': 662575, 'inode_total': 7864320, 'inode_available': 7861193, 'inode_used': 3127, 'uuid': 'f3a4b64f-2466-4aab-971d-c2599f194ef9'})
+skipping: [hostname.xyz.com] => (item={'mount': '/opt/clickhouse', 'device': '/dev/mapper/appvg-optclickhouselv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 53660876800, 'size_available': 52711923712, 'block_size': 4096, 'block_total': 13100800, 'block_available': 12869122, 'block_used': 231678, 'inode_total': 26214400, 'inode_available': 26214366, 'inode_used': 34, 'uuid': '4b731a6a-7b78-4582-92f7-dfadfe04631a'})
+skipping: [hostname.xyz.com] => (item={'mount': '/opt/clickhouse/log', 'device': '/dev/mapper/appvg-optclickhouseloglv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 53660876800, 'size_available': 52657901568, 'block_size': 4096, 'block_total': 13100800, 'block_available': 12855933, 'block_used': 244867, 'inode_total': 26214400, 'inode_available': 26214391, 'inode_used': 9, 'uuid': '49ed50a3-9950-40fb-a85e-0c3e4edd929d'})
+
+TASK [Boot mount point freespace > 50MB] ***************************************
+skipping: [hostname.xyz.com] => (item={'mount': '/', 'device': '/dev/mapper/rootvg-rootlv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 10726932480, 'size_available': 7984705536, 'block_size': 4096, 'block_total': 2618880, 'block_available': 1949391, 'block_used': 669489, 'inode_total': 5242880, 'inode_available': 5201922, 'inode_used': 40958, 'uuid': 'c4d4f4dd-16b6-4472-9029-80a73095489a'})
+ok: [hostname.xyz.com] => (item={'mount': '/boot', 'device': '/dev/sda1', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 1042161664, 'size_available': 770334720, 'block_size': 4096, 'block_total': 254434, 'block_available': 188070, 'block_used': 66364, 'inode_total': 512000, 'inode_available': 511682, 'inode_used': 318, 'uuid': '5aa31add-9c4f-431d-86a5-0f3e86022c3c'}) => {
+"ansible_loop_var": "item",
+"changed": false,
+"item": {
+"block_available": 188070,
+"block_size": 4096,
+"block_total": 254434,
+"block_used": 66364,
+"device": "/dev/sda1",
+"fstype": "xfs",
+"inode_available": 511682,
+"inode_total": 512000,
+"inode_used": 318,
+"mount": "/boot",
+"options": "rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 770334720,
+"size_total": 1042161664,
+"uuid": "5aa31add-9c4f-431d-86a5-0f3e86022c3c"
+},
+"msg": "All assertions passed"
+}
+skipping: [hostname.xyz.com] => (item={'mount': '/tmp', 'device': '/dev/mapper/rootvg-tmplv', 'fstype': 'xfs', 'options': 'rw,seclabel,nosuid,nodev,noexec,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 8579448832, 'size_available': 8485089280, 'block_size': 4096, 'block_total': 2094592, 'block_available': 2071555, 'block_used': 23037, 'inode_total': 4194304, 'inode_available': 4194233, 'inode_used': 71, 'uuid': 'cfe9a278-c8d8-47c7-abd2-096d098805a0'})
+skipping: [hostname.xyz.com] => (item={'mount': '/var', 'device': '/dev/mapper/rootvg-varlv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 10726932480, 'size_available': 9894518784, 'block_size': 4096, 'block_total': 2618880, 'block_available': 2415654, 'block_used': 203226, 'inode_total': 5242880, 'inode_available': 5240320, 'inode_used': 2560, 'uuid': '7674ca6b-e20c-4f29-94f8-e6a3e055b633'})
+skipping: [hostname.xyz.com] => (item={'mount': '/home', 'device': '/dev/mapper/rootvg-homelv', 'fstype': 'xfs', 'options': 'rw,seclabel,nodev,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 2136997888, 'size_available': 2059898880, 'block_size': 4096, 'block_total': 521728, 'block_available': 502905, 'block_used': 18823, 'inode_total': 1048576, 'inode_available': 1048483, 'inode_used': 93, 'uuid': 'a78c2889-fc61-4d8c-ba3d-2032f70953d8'})
+skipping: [hostname.xyz.com] => (item={'mount': '/var/tmp', 'device': '/dev/mapper/rootvg-tmplv', 'fstype': 'xfs', 'options': 'rw,seclabel,nosuid,nodev,noexec,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 8579448832, 'size_available': 8485089280, 'block_size': 4096, 'block_total': 2094592, 'block_available': 2071555, 'block_used': 23037, 'inode_total': 4194304, 'inode_available': 4194233, 'inode_used': 71, 'uuid': 'cfe9a278-c8d8-47c7-abd2-096d098805a0'})
+skipping: [hostname.xyz.com] => (item={'mount': '/var/log', 'device': '/dev/mapper/rootvg-varloglv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 10726932480, 'size_available': 9224138752, 'block_size': 4096, 'block_total': 2618880, 'block_available': 2251987, 'block_used': 366893, 'inode_total': 5242880, 'inode_available': 5242670, 'inode_used': 210, 'uuid': 'e56b081b-c6fe-40fa-9758-df3189009db1'})
+skipping: [hostname.xyz.com] => (item={'mount': '/opt', 'device': '/dev/mapper/rootvg-optlv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 16095641600, 'size_available': 13381734400, 'block_size': 4096, 'block_total': 3929600, 'block_available': 3267025, 'block_used': 662575, 'inode_total': 7864320, 'inode_available': 7861193, 'inode_used': 3127, 'uuid': 'f3a4b64f-2466-4aab-971d-c2599f194ef9'})
+skipping: [hostname.xyz.com] => (item={'mount': '/opt/clickhouse', 'device': '/dev/mapper/appvg-optclickhouselv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 53660876800, 'size_available': 52711923712, 'block_size': 4096, 'block_total': 13100800, 'block_available': 12869122, 'block_used': 231678, 'inode_total': 26214400, 'inode_available': 26214366, 'inode_used': 34, 'uuid': '4b731a6a-7b78-4582-92f7-dfadfe04631a'})
+skipping: [hostname.xyz.com] => (item={'mount': '/opt/clickhouse/log', 'device': '/dev/mapper/appvg-optclickhouseloglv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 53660876800, 'size_available': 52657901568, 'block_size': 4096, 'block_total': 13100800, 'block_available': 12855933, 'block_used': 244867, 'inode_total': 26214400, 'inode_available': 26214391, 'inode_used': 9, 'uuid': '49ed50a3-9950-40fb-a85e-0c3e4edd929d'})
+
+TASK [Other mount point freespace > 10MB] **************************************
+skipping: [hostname.xyz.com] => (item={'mount': '/', 'device': '/dev/mapper/rootvg-rootlv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 10726932480, 'size_available': 7984705536, 'block_size': 4096, 'block_total': 2618880, 'block_available': 1949391, 'block_used': 669489, 'inode_total': 5242880, 'inode_available': 5201922, 'inode_used': 40958, 'uuid': 'c4d4f4dd-16b6-4472-9029-80a73095489a'})
+skipping: [hostname.xyz.com] => (item={'mount': '/boot', 'device': '/dev/sda1', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 1042161664, 'size_available': 770334720, 'block_size': 4096, 'block_total': 254434, 'block_available': 188070, 'block_used': 66364, 'inode_total': 512000, 'inode_available': 511682, 'inode_used': 318, 'uuid': '5aa31add-9c4f-431d-86a5-0f3e86022c3c'})
+ok: [hostname.xyz.com] => (item={'mount': '/tmp', 'device': '/dev/mapper/rootvg-tmplv', 'fstype': 'xfs', 'options': 'rw,seclabel,nosuid,nodev,noexec,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 8579448832, 'size_available': 8485089280, 'block_size': 4096, 'block_total': 2094592, 'block_available': 2071555, 'block_used': 23037, 'inode_total': 4194304, 'inode_available': 4194233, 'inode_used': 71, 'uuid': 'cfe9a278-c8d8-47c7-abd2-096d098805a0'}) => {
+"ansible_loop_var": "item",
+"changed": false,
+"item": {
+"block_available": 2071555,
+"block_size": 4096,
+"block_total": 2094592,
+"block_used": 23037,
+"device": "/dev/mapper/rootvg-tmplv",
+"fstype": "xfs",
+"inode_available": 4194233,
+"inode_total": 4194304,
+"inode_used": 71,
+"mount": "/tmp",
+"options": "rw,seclabel,nosuid,nodev,noexec,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 8485089280,
+"size_total": 8579448832,
+"uuid": "cfe9a278-c8d8-47c7-abd2-096d098805a0"
+},
+"msg": "All assertions passed"
+}
+ok: [hostname.xyz.com] => (item={'mount': '/var', 'device': '/dev/mapper/rootvg-varlv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 10726932480, 'size_available': 9894518784, 'block_size': 4096, 'block_total': 2618880, 'block_available': 2415654, 'block_used': 203226, 'inode_total': 5242880, 'inode_available': 5240320, 'inode_used': 2560, 'uuid': '7674ca6b-e20c-4f29-94f8-e6a3e055b633'}) => {
+"ansible_loop_var": "item",
+"changed": false,
+"item": {
+"block_available": 2415654,
+"block_size": 4096,
+"block_total": 2618880,
+"block_used": 203226,
+"device": "/dev/mapper/rootvg-varlv",
+"fstype": "xfs",
+"inode_available": 5240320,
+"inode_total": 5242880,
+"inode_used": 2560,
+"mount": "/var",
+"options": "rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 9894518784,
+"size_total": 10726932480,
+"uuid": "7674ca6b-e20c-4f29-94f8-e6a3e055b633"
+},
+"msg": "All assertions passed"
+}
+ok: [hostname.xyz.com] => (item={'mount': '/home', 'device': '/dev/mapper/rootvg-homelv', 'fstype': 'xfs', 'options': 'rw,seclabel,nodev,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 2136997888, 'size_available': 2059898880, 'block_size': 4096, 'block_total': 521728, 'block_available': 502905, 'block_used': 18823, 'inode_total': 1048576, 'inode_available': 1048483, 'inode_used': 93, 'uuid': 'a78c2889-fc61-4d8c-ba3d-2032f70953d8'}) => {
+"ansible_loop_var": "item",
+"changed": false,
+"item": {
+"block_available": 502905,
+"block_size": 4096,
+"block_total": 521728,
+"block_used": 18823,
+"device": "/dev/mapper/rootvg-homelv",
+"fstype": "xfs",
+"inode_available": 1048483,
+"inode_total": 1048576,
+"inode_used": 93,
+"mount": "/home",
+"options": "rw,seclabel,nodev,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 2059898880,
+"size_total": 2136997888,
+"uuid": "a78c2889-fc61-4d8c-ba3d-2032f70953d8"
+},
+"msg": "All assertions passed"
+}
+ok: [hostname.xyz.com] => (item={'mount': '/var/tmp', 'device': '/dev/mapper/rootvg-tmplv', 'fstype': 'xfs', 'options': 'rw,seclabel,nosuid,nodev,noexec,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 8579448832, 'size_available': 8485089280, 'block_size': 4096, 'block_total': 2094592, 'block_available': 2071555, 'block_used': 23037, 'inode_total': 4194304, 'inode_available': 4194233, 'inode_used': 71, 'uuid': 'cfe9a278-c8d8-47c7-abd2-096d098805a0'}) => {
+"ansible_loop_var": "item",
+"changed": false,
+"item": {
+"block_available": 2071555,
+"block_size": 4096,
+"block_total": 2094592,
+"block_used": 23037,
+"device": "/dev/mapper/rootvg-tmplv",
+"fstype": "xfs",
+"inode_available": 4194233,
+"inode_total": 4194304,
+"inode_used": 71,
+"mount": "/var/tmp",
+"options": "rw,seclabel,nosuid,nodev,noexec,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 8485089280,
+"size_total": 8579448832,
+"uuid": "cfe9a278-c8d8-47c7-abd2-096d098805a0"
+},
+"msg": "All assertions passed"
+}
+ok: [hostname.xyz.com] => (item={'mount': '/var/log', 'device': '/dev/mapper/rootvg-varloglv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 10726932480, 'size_available': 9224138752, 'block_size': 4096, 'block_total': 2618880, 'block_available': 2251987, 'block_used': 366893, 'inode_total': 5242880, 'inode_available': 5242670, 'inode_used': 210, 'uuid': 'e56b081b-c6fe-40fa-9758-df3189009db1'}) => {
+"ansible_loop_var": "item",
+"changed": false,
+"item": {
+"block_available": 2251987,
+"block_size": 4096,
+"block_total": 2618880,
+"block_used": 366893,
+"device": "/dev/mapper/rootvg-varloglv",
+"fstype": "xfs",
+"inode_available": 5242670,
+"inode_total": 5242880,
+"inode_used": 210,
+"mount": "/var/log",
+"options": "rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 9224138752,
+"size_total": 10726932480,
+"uuid": "e56b081b-c6fe-40fa-9758-df3189009db1"
+},
+"msg": "All assertions passed"
+}
+ok: [hostname.xyz.com] => (item={'mount': '/opt', 'device': '/dev/mapper/rootvg-optlv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 16095641600, 'size_available': 13381734400, 'block_size': 4096, 'block_total': 3929600, 'block_available': 3267025, 'block_used': 662575, 'inode_total': 7864320, 'inode_available': 7861193, 'inode_used': 3127, 'uuid': 'f3a4b64f-2466-4aab-971d-c2599f194ef9'}) => {
+"ansible_loop_var": "item",
+"changed": false,
+"item": {
+"block_available": 3267025,
+"block_size": 4096,
+"block_total": 3929600,
+"block_used": 662575,
+"device": "/dev/mapper/rootvg-optlv",
+"fstype": "xfs",
+"inode_available": 7861193,
+"inode_total": 7864320,
+"inode_used": 3127,
+"mount": "/opt",
+"options": "rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 13381734400,
+"size_total": 16095641600,
+"uuid": "f3a4b64f-2466-4aab-971d-c2599f194ef9"
+},
+"msg": "All assertions passed"
+}
+ok: [hostname.xyz.com] => (item={'mount': '/opt/clickhouse', 'device': '/dev/mapper/appvg-optclickhouselv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 53660876800, 'size_available': 52711923712, 'block_size': 4096, 'block_total': 13100800, 'block_available': 12869122, 'block_used': 231678, 'inode_total': 26214400, 'inode_available': 26214366, 'inode_used': 34, 'uuid': '4b731a6a-7b78-4582-92f7-dfadfe04631a'}) => {
+"ansible_loop_var": "item",
+"changed": false,
+"item": {
+"block_available": 12869122,
+"block_size": 4096,
+"block_total": 13100800,
+"block_used": 231678,
+"device": "/dev/mapper/appvg-optclickhouselv",
+"fstype": "xfs",
+"inode_available": 26214366,
+"inode_total": 26214400,
+"inode_used": 34,
+"mount": "/opt/clickhouse",
+"options": "rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 52711923712,
+"size_total": 53660876800,
+"uuid": "4b731a6a-7b78-4582-92f7-dfadfe04631a"
+},
+"msg": "All assertions passed"
+}
+ok: [hostname.xyz.com] => (item={'mount': '/opt/clickhouse/log', 'device': '/dev/mapper/appvg-optclickhouseloglv', 'fstype': 'xfs', 'options': 'rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota', 'size_total': 53660876800, 'size_available': 52657901568, 'block_size': 4096, 'block_total': 13100800, 'block_available': 12855933, 'block_used': 244867, 'inode_total': 26214400, 'inode_available': 26214391, 'inode_used': 9, 'uuid': '49ed50a3-9950-40fb-a85e-0c3e4edd929d'}) => {
+"ansible_loop_var": "item",
+"changed": false,
+"item": {
+"block_available": 12855933,
+"block_size": 4096,
+"block_total": 13100800,
+"block_used": 244867,
+"device": "/dev/mapper/appvg-optclickhouseloglv",
+"fstype": "xfs",
+"inode_available": 26214391,
+"inode_total": 26214400,
+"inode_used": 9,
+"mount": "/opt/clickhouse/log",
+"options": "rw,seclabel,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota",
+"size_available": 52657901568,
+"size_total": 53660876800,
+"uuid": "49ed50a3-9950-40fb-a85e-0c3e4edd929d"
+},
+"msg": "All assertions passed"
+}
+
+TASK [Check for encrypted devices] *********************************************
+skipping: [hostname.xyz.com]
+
+TASK [Run Netbackup tool hostname.xyz.com] *******************************
+fatal: [hostname.xyz.com]: FAILED! => {"changed": true, "cmd": "/usr/openv/netbackup/bin/bpclimagelist -U -client hostname.xyz.com", "delta": "0:00:00.004593", "end": "2026-03-03 16:11:50.563986", "msg": "non-zero return code", "rc": 127, "start": "2026-03-03 16:11:50.559393", "stderr": "/bin/sh: /usr/openv/netbackup/bin/bpclimagelist: No such file or directory", "stderr_lines": ["/bin/sh: /usr/openv/netbackup/bin/bpclimagelist: No such file or directory"], "stdout": "", "stdout_lines": []}
+...ignoring
+
+TASK [Check for Full and Incr Backups in NBU] **********************************
+skipping: [hostname.xyz.com]
+
+TASK [Touch isBackedUp file] ***************************************************
+skipping: [hostname.xyz.com]
+
+TASK [Get osvmigration service account] ****************************************
+ok: [hostname.xyz.com]
+
+TASK [Retrieve CloudView token] ************************************************
+ok: [hostname.xyz.com -> 127.0.0.1]
+
+TASK [Check CloudGateway token response] ***************************************
+ok: [hostname.xyz.com]
+
+TASK [Extract CloudView token from response] ***********************************
+ok: [hostname.xyz.com]
+
+TASK [Get status of VM in CMDB] ************************************************
+ok: [hostname.xyz.com -> 127.0.0.1]
+
+TASK [Assert VM is not Decommissioning] ****************************************
+ok: [hostname.xyz.com] => {
+"changed": false,
+"msg": "All assertions passed"
+}
+
+TASK [Change Owner] ************************************************************
+changed: [hostname.xyz.com]
+
+PLAY RECAP *********************************************************************
+hostname.xyz.com : ok=58 changed=23 unreachable=0 failed=0 skipped=73 rescued=0 ignored=2

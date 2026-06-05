@@ -1,29 +1,90 @@
 # gadk-rhoai
 
-Deploy Google ADK agents with configurable skills on OpenShift, with optional OIDC authentication and LLM flexibility.
+AI-powered VMware-to-OpenShift Virtualization migration agent built with [Google ADK](https://github.com/google/adk-python), deployed on OpenShift with OIDC auth, LLM flexibility, and configurable skills.
+
+## What It Does
+
+An intelligent migration coordinator that can:
+- **Assess migration readiness** by analyzing Ansible playbook output (36 pre-migration checks)
+- **Execute migrations** by triggering MTV (Migration Toolkit for Virtualization) plans
+- **Monitor migrations** in real-time with log analysis and failure diagnosis
+- **Validate post-migration** results (39 post-migration checks, before/after comparison)
+- **Generate reports** with structured findings, blockers, and remediation steps
+- **Plan migration batches** with capacity analysis and risk assessment
 
 ## Architecture
 
 ```
-Browser --> OIDC (Keycloak) --> ADK Web UI (nginx :8080) --> ADK API Server (:8000) --> LLM
-                                     |                              |
-                                ConfigMap                     ConfigMap
-                            (runtime-config.json)           (SKILL.md files)
+Browser --> OIDC (Keycloak) --> ADK Web UI (nginx) --> ADK API Server --> LLM
+                                                            |
+                                              +-------------+-------------+
+                                              |             |             |
+                                        MTV/OCP Virt    AAP/Ansible   Skills
+                                        (VMware VMs,    (Pre/Post     (10 analysis
+                                         migrations,    migration      skills with
+                                         pod logs)      playbooks)     reference data)
 ```
 
-**Single-pod sidecar pattern:**
-- `adk-web` container: nginx serving the Angular UI + proxying `/api/` to localhost:8000
-- `adk-api` container: `adk api_server` running the agent with skills from `/skills` mount
-- Init container: reconstructs the skill directory tree from ConfigMap keys
+### Multi-Agent Pipeline (AGENT_MODE=pipeline)
 
-**No Google Cloud dependency.** All components are open source (Apache 2.0).
+```
+Coordinator (root_agent)
+  |-- MigrationPipeline (SequentialAgent)
+  |     |-- DiscoveryAgent      -> list VMware VMs
+  |     |-- AssessmentAgent     -> run pre-migration checks, produce readiness report
+  |     |-- MigrationAgent      -> trigger MTV migration
+  |     |-- MigrationMonitor    -> poll status until complete (LoopAgent)
+  |     |-- ValidationAgent     -> run post-migration checks, compare before/after
+  |     |-- ReporterAgent       -> generate completion report
+  |-- (direct tools for ad-hoc queries)
+```
+
+### Single-pod Sidecar Pattern (OpenShift)
+
+- `adk-web` container: nginx serving Angular UI + proxying `/api/` to localhost:8000
+- `adk-api` container: `adk api_server` running the migration agent
+- Init container: reconstructs skill directory tree from ConfigMap
+
+## Skills
+
+| Skill | Description |
+|---|---|
+| `pre-migration-analyzer` | 36 checks from customer's pre-migration playbook (hypervisor, OS, kernel, disk, packages, backup, CMDB) |
+| `post-migration-validator` | 39 checks from customer's post-migration playbook (platform, ACM, vCenter cleanup, guest agent, CMDB) |
+| `ansible-output-parser` | Parses AAP job output format (Slice headers, assertions, ignored errors, PLAY RECAP) |
+| `assessment-report-generator` | Formal readiness report with per-check table, blockers, warnings, remediation |
+| `completion-report-generator` | Migration completion report with before/after comparison and sign-off |
+| `mtv-log-analyzer` | Diagnoses MTV migration failures from forklift/virt-v2v/CDI logs |
+| `migration-kb-builder` | Manages knowledge base of migration patterns and resolutions |
+| `capacity-analyzer` | Cluster capacity analysis for migration planning |
+| `batch-planner` | Groups VMs into migration batches by risk, dependency, and capacity |
+| `risk-assessor` | Weighted risk scoring (OS, disk, network, criticality, backup, history) |
+| `migration-workflow` | End-to-end orchestration: discover, assess, migrate, monitor, validate, report |
+
+Skills include bundled sample data from real customer playbook output for offline demos.
+
+## Tools
+
+| Tool | Source | Description |
+|---|---|---|
+| `list_vmware_vms` | MTV inventory API | Discover VMware VMs via Forklift provider |
+| `list_migrated_vms` | KubeVirt API | List VMs on OCP Virtualization |
+| `get_vm_details` | KubeVirt API | Detailed VM spec (CPU, memory, disks, interfaces) |
+| `get_migration_status` | Forklift API | Check MTV plan/migration progress |
+| `create_migration_plan` | Forklift API | Trigger a real VMware-to-OCP Virt migration |
+| `get_pod_logs` | Kubernetes API | Read pod logs for troubleshooting |
+| `list_job_templates` | AAP API | List available Ansible job templates |
+| `launch_job` | AAP API | Trigger an Ansible playbook via AAP |
+| `get_job_status` | AAP API | Poll Ansible job progress |
+| `get_job_output` | AAP API | Retrieve playbook stdout output |
+| `save_report_artifact` | ADK Artifacts | Save report as downloadable file |
 
 ## Pre-Built Images
 
 | Image | Description |
 |---|---|
 | `quay.io/rbrhssa/adk-web:oidc` | ADK Web UI with OIDC auth support (nginx) |
-| `quay.io/rbrhssa/adk-agent:skills` | ADK API Server with dynamic skill loading (Python) |
+| `quay.io/rbrhssa/adk-agent:migration` | Migration agent with all skills and sample data |
 
 ## Quick Start
 
@@ -37,173 +98,60 @@ oc create secret docker-registry quay-pull-secret \
   --docker-username=YOUR_QUAY_USER \
   --docker-password=YOUR_QUAY_PASS
 
-# 3. Edit deploy/openshift.yaml -- replace placeholders:
-#    KEYCLOAK_HOST, REALM_NAME, CLIENT_ID  (or remove auth for anonymous)
-#    LLM_API_BASE                          (your LLM endpoint)
-#    ADK_MODEL_NAME                        (model identifier)
+# 3. Create cluster access tokens (for multi-cluster)
+oc create secret generic mtv-cluster-token --from-literal=token=<MTV_TOKEN> -n adk-web
+oc create secret generic virt-cluster-token --from-literal=token=<VIRT_TOKEN> -n adk-web
+oc create secret generic aap-agent-token --from-literal=token=<AAP_TOKEN> -n adk-web
 
-# 4. Deploy
+# 4. Edit deploy/openshift.yaml -- replace placeholders:
+#    KEYCLOAK_HOST, REALM_NAME, CLIENT_ID
+#    LLM_API_BASE, ADK_MODEL_NAME
+
+# 5. Deploy
 oc apply -f deploy/openshift.yaml
 
-# 5. Get the URL
+# 6. Get the URL
 oc get route adk-web -o jsonpath='{.spec.host}'
 ```
 
-## Configuration Reference
+## Configuration
 
-### UI Configuration (ConfigMap: `adk-web-config`)
-
-| Field | Default | Description |
-|---|---|---|
-| `backendUrl` | `/api` | ADK API server URL (use `/api` for sidecar proxy) |
-| `auth.enabled` | `false` | Enable OIDC authentication |
-| `auth.authority` | - | OIDC issuer URL (e.g., `https://keycloak.example.com/realms/myrealm`) |
-| `auth.clientId` | - | OIDC public client ID |
-| `auth.scopes` | `openid profile email` | OIDC scopes |
-| `auth.rolesClaim` | `realm_access.roles` | Dot-path to roles array in JWT (Okta: `groups`, Azure AD: `roles`) |
-
-### Agent Configuration (Deployment env vars)
+### Agent Environment Variables
 
 | Env Var | Default | Description |
 |---|---|---|
-| `OPENAI_API_BASE` | - | LLM API endpoint (Llama Stack, Ollama, vLLM, etc.) |
-| `OPENAI_API_KEY` | - | LLM API key (set to `not-needed` if provider handles auth) |
+| `OPENAI_API_BASE` | - | LLM API endpoint |
 | `ADK_MODEL` | `openai/gemini/models/gemini-2.5-flash` | LiteLlm model string |
-| `SKILLS_DIR` | `/skills` | Path to skills directory (mounted from ConfigMap) |
-| `AGENT_NAME` | `skills_agent` | Agent name shown in UI |
-| `AGENT_DESC` | `An agent powered by configurable skills.` | Agent description |
-| `AGENT_INSTRUCTION_FILE` | - | Path to agent system instruction markdown file |
-| `AGENT_INSTRUCTION` | (built-in default) | Agent system instruction (env var, used if no file) |
+| `AGENT_MODE` | `pipeline` | `pipeline` (multi-agent) or `single` (monolithic) |
+| `SKILLS_DIR` | `/skills` | Skills directory path |
+| `DEFAULT_MTV_NAMESPACE` | `mtv-user1` | MTV provider namespace |
+| `DEFAULT_VIRT_NAMESPACE` | `vmimported-user1` | Target namespace for migrated VMs |
+| `AAP_URL` | - | AAP Controller URL |
+| `AAP_TOKEN` | *(from Secret)* | AAP API bearer token |
+| `PRE_MIGRATION_TEMPLATE_ID` | - | AAP template ID for pre-migration assessment |
+| `POST_MIGRATION_TEMPLATE_ID` | - | AAP template ID for post-migration validation |
 
-## Skills Guide
+See `deploy/openshift.yaml` for the full list including multi-cluster configuration.
 
-Skills are `SKILL.md` files following the [agentskills.io](https://agentskills.io) specification. They are stored in the `adk-skills` ConfigMap and mounted into the agent container.
+## Test Prompts
 
-### ConfigMap Naming Convention
-
-ConfigMap keys map to the directory structure using `--` as a path separator:
-
-```
-ConfigMap Key                                  Mounted Path
------------                                    ------------
-seo-checklist--SKILL.md                   -->  /skills/seo-checklist/SKILL.md
-blog-writer--SKILL.md                     -->  /skills/blog-writer/SKILL.md
-blog-writer--references--style-guide.md   -->  /skills/blog-writer/references/style-guide.md
-agent-instruction.md                      -->  /skills/agent-instruction.md
-```
-
-### Add a New Skill (No Image Rebuild)
-
-```bash
-oc patch configmap adk-skills -n adk-web --type merge -p '{
-  "data": {
-    "my-new-skill--SKILL.md": "---\nname: my-new-skill\ndescription: Does something useful\n---\n\n# Instructions\n\nStep-by-step instructions here..."
-  }
-}'
-oc rollout restart deployment/adk-web -n adk-web
-```
-
-### Edit a Skill
-
-```bash
-oc edit configmap adk-skills -n adk-web
-# Edit the SKILL.md content, save
-oc rollout restart deployment/adk-web -n adk-web
-```
-
-### Remove a Skill
-
-```bash
-oc patch configmap adk-skills -n adk-web --type json \
-  -p '[{"op":"remove","path":"/data/my-new-skill--SKILL.md"}]'
-oc rollout restart deployment/adk-web -n adk-web
-```
-
-### SKILL.md Format
-
-```markdown
----
-name: my-skill-name
-description: What this skill does and when to use it (max 1024 chars).
----
-
-# Instructions
-
-Step-by-step instructions the agent follows when this skill is activated.
-
-## Step 1: ...
-Use `load_skill_resource` to read `references/detailed-guide.md`.
-
-## Step 2: ...
-```
-
-## Authentication
-
-### Anonymous Mode (Default)
-
-Remove the `auth` section from the ConfigMap or set `auth.enabled: false`:
-
-```json
-{
-  "backendUrl": "/api"
-}
-```
-
-### OIDC Mode (Keycloak, Okta, Auth0, Azure AD)
-
-```json
-{
-  "backendUrl": "/api",
-  "auth": {
-    "enabled": true,
-    "authority": "https://keycloak.example.com/realms/myrealm",
-    "clientId": "my-client-id"
-  }
-}
-```
-
-**Keycloak client setup:**
-1. Create a public client (Client authentication: OFF)
-2. Enable Standard flow
-3. Set Valid redirect URIs: `https://YOUR_ROUTE_URL/*`
-4. Set Web origins: `https://YOUR_ROUTE_URL`
-
-## LLM Providers
-
-Works with any OpenAI-compatible API via LiteLlm:
-
-| Provider | `OPENAI_API_BASE` | `ADK_MODEL` | `OPENAI_API_KEY` |
-|---|---|---|---|
-| **Llama Stack** | `https://llamastack.example.com/v1` | `openai/gemini/models/gemini-2.5-flash` | `not-needed` |
-| **Ollama** | `http://ollama-svc:11434/v1` | `openai/llama3.1` | `not-needed` |
-| **vLLM** | `http://vllm-svc:8000/v1` | `openai/mistral-7b` | `not-needed` |
-| **OpenAI** | `https://api.openai.com/v1` | `openai/gpt-4o` | Your API key |
-| **Gemini Direct** | (not needed) | `gemini-2.5-flash` | Set `GOOGLE_API_KEY` instead |
+See [docs/test-prompts.md](docs/test-prompts.md) for categorized test prompts covering all four use cases:
+1. Migration readiness assessment
+2. Migration monitoring and troubleshooting
+3. Post-migration validation
+4. Migration planning and capacity insights
 
 ## Building Images
 
-### Build the UI image
-
 ```bash
-cd /path/to/adk-web  # The google/adk-web fork with OIDC
-podman build --platform linux/amd64 -f deploy/Dockerfile -t adk-web:oidc .
-```
-
-### Build the agent image
-
-```bash
+# Build the agent image
 cd /path/to/gadk-rhoai
-podman build --platform linux/amd64 -f deploy/Dockerfile.agent -t adk-agent:skills .
+podman build --platform linux/amd64 -f deploy/Dockerfile.agent -t adk-agent:migration .
+podman push quay.io/rbrhssa/adk-agent:migration
+
+# Redeploy (no image rebuild needed for skill-only changes via ConfigMap)
+oc rollout restart deployment/adk-web -n adk-web
 ```
-
-## Included Skills
-
-| Skill | Description |
-|---|---|
-| `seo-checklist` | SEO optimization checklist for blog posts |
-| `blog-writer` | Blog post writing with structure templates and style guide |
-| `content-research-writer` | Content research and SEO writing methodology |
-| `skill-creator` | Meta-skill that generates new SKILL.md definitions |
 
 ## License
 

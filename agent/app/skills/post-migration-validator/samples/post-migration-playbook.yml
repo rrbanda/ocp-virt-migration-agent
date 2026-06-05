@@ -1,0 +1,332 @@
+---
+- name: Post-migration Check Linux
+  hosts: all
+  gather_facts: yes
+  become_method: sudo
+  become: yes
+
+  tasks:
+    # - name: Debug
+    #   debug:
+    #     var: ansible_facts
+    #
+    - name: Verify OSV platform
+      assert:
+        that: ansible_facts.product_name == 'OpenShift Virtualization'
+        fail_msg: VM is on {{ ansible_facts.product_name }}, not on OpenShift Virtualization
+
+    - name: Verify Linux OS
+      assert:
+        that: ansible_facts.os_family != 'Windows'
+        fail_msg: VM OS is Windows, not Linux
+
+    - name: Get osvmigration service account
+      set_fact:
+        osvmig_username: "{{ lookup('ansible.builtin.env', 'generic_username') }}"
+        osvmig_password: "{{ lookup('ansible.builtin.env', 'generic_password') }}"
+      no_log: true
+
+    - name: Retrieve ACM token
+      uri:
+        url: "https://oauth-openshift.apps.{{ acm_cluster }}.trusted.xyz.com/oauth/authorize?response_type=token&client_id=openshift-challenging-client"
+        validate_certs: no
+        follow_redirects: none
+        force_basic_auth: yes
+        url_username: "{{ osvmig_username }}"
+        url_password: "{{ osvmig_password }}"
+        headers:
+          X-CSRF-Token: not used
+        status_code:
+          - 302
+      register: acm_token_response
+      delegate_to: 127.0.0.1
+      no_log: true
+
+    - name: Check ACM token response
+      assert:
+        that: 
+          - "'location' in acm_token_response"
+          - acm_token_response.location | regex_search('access_token=([^&]+)&', '\\1') != []
+        fail_msg: "Unexpected OAuth response: {{ acm_token_response }}"
+      no_log: true
+
+    - name: Extract ACM token from response
+      set_fact:
+        acm_token: "{{ (acm_token_response.location | regex_search('access_token=([^&]+)&', '\\1'))[0] }}"
+      no_log: true
+
+    - name: Search for VM {{ inventory_hostname_short }} in ACM
+      uri:
+        url: "https://search-api-open-cluster-management.apps.{{ acm_cluster }}.trusted.xyz.com/searchapi/graphql"
+        validate_certs: no
+        method: POST
+        headers:
+          Authorization: Bearer {{ acm_token }}
+        body_format: json
+        body:
+          query: "query searchResultItems($input: [SearchInput]) {searchResult: search(input: $input) {items} }"
+          variables:
+            input:
+              - keywords: []
+                filters:
+                  - property: kind
+                    values:
+                      - VirtualMachine
+                  - property: name
+                    values:
+                      - "{{ inventory_hostname_short | lower }}"
+      register: acm_lookup_response
+      delegate_to: 127.0.0.1
+      no_log: true
+
+    - name: Verify that there is exactly one VM in ACM
+      assert:
+        that:
+          - acm_lookup_response.json.data.searchResult | length == 1
+          - acm_lookup_response.json.data.searchResult[0]['items'] | length == 1
+          - "'cluster' in acm_lookup_response.json.data.searchResult[0]['items'][0]"
+        fail_msg: None or more than one VM named {{ inventory_hostname_short }} found in ACM
+
+    - name: Get osvmig_ dirs from var opt
+      find:
+        paths: "/var/opt/"
+        patterns: "osvmig_*"
+        file_type: directory
+        use_regex: yes
+      register: osvmig_dirs
+
+    - name: Compare pre-migration configuration
+      block:
+
+      - name: Identify latest osvmig_dir
+        set_fact:
+          workingdir: "{{ osvmig_dirs.files | sort(attribute='mtime',reverse=true) | first }}"
+
+      - name: Slurp premig_facts
+        slurp:
+          src: "{{ workingdir.path }}/ansiblefacts.json"
+        register: slurped_facts
+        
+      - name: Load premig_facts
+        set_fact:
+          premig_facts: "{{ slurped_facts['content'] | b64decode | from_json }}"
+
+      # - name: Print premig_facts
+      #   debug:
+      #     var: premig_facts
+          
+      - name: Verify CPU, Memory unchanged
+        assert:
+          that:
+            - premig_facts.processor_vcpus == ansible_facts.processor_vcpus
+            - ( ansible_facts.memtotal_mb / premig_facts.memtotal_mb ) > 0.9
+            - ( ansible_facts.memtotal_mb / premig_facts.memtotal_mb ) < 1.1
+        ignore_errors: true
+            
+      - name: Verify default network unchanged
+        assert:
+          that:
+            - premig_facts.default_ipv4.address == ansible_facts.default_ipv4.address
+            - premig_facts.default_ipv4.netmask == ansible_facts.default_ipv4.netmask
+            - premig_facts.default_ipv4.gateway == ansible_facts.default_ipv4.gateway
+
+      - name: Check if isBackedUp exists
+        stat:
+          path: "{{ workingdir.path }}/isBackedUp"
+        register: backed_up
+
+      when: osvmig_dirs.files != []
+
+    - name: Warn about skipped premigration fact check
+      debug:
+        msg: "WARNING: Could not find osvmig directory. Skipped verification of premigration configuration."
+      when: osvmig_dirs.files == []
+
+    - name: Get today's date in YYYYMMDD format
+      set_fact:
+        current_date: "{{ lookup('pipe', 'date +%Y%m%d') }}"
+
+    - name: Reconfigure VM-as-Migrated Block
+      include_tasks: block-vm-as-migrated.yaml
+      loop: "{{ vcenters }}"
+      loop_control:
+        loop_var: vcenter_item
+
+    - name: Retrieve CloudView token
+      uri:
+        url: "https://cloudgateway.trusted.xyz.com:8443/cloudgateway/security/tokens"
+        method: POST
+        body_format: json
+        body:
+          username: "{{ osvmig_username }}"
+          password: "{{ osvmig_password }}"
+          onBehalfOf: "{{ job_run_user }}"
+      register: cloudgateway_token_response
+      until: cloudgateway_token_response.status == 200 or cloudgateway_token_response.status == 202
+      retries: 10
+      delay: 30
+      delegate_to: 127.0.0.1
+      no_log: true
+    
+    - name: Check CloudGateway token response
+      assert:
+        that: "'authToken' in cloudgateway_token_response.json"
+        fail_msg: "Unexpected CloudGateway response: {{ cloudgateway_token_response }}"
+      no_log: true
+
+    - name: Extract CloudView token from response
+      set_fact:
+        cloudview_token: "{{ cloudgateway_token_response.json.authToken }}"
+      no_log: true
+
+    - name: Verify that vmware-guest-tools are not installed
+      command: vmware-toolbox-cmd -v
+      register: vmware_tools_version
+      failed_when: vmware_tools_version.rc == 0
+
+    - name: Install qemu-guest-agent
+      shell: "yum install --disablerepo=* --disableplugin=foreman-protector {{ workingdir.path }}/*.rpm -q -y"
+      become: yes
+      ignore_errors: true
+      
+    - name: Check if qemu-ga is installed
+      command: "qemu-ga --version"
+      register: qemu_ga_version
+      failed_when: qemu_ga_version.rc != 0
+      ignore_errors: true
+
+    - name: Enable and start qemu-guest-agent
+      systemd:
+        name: qemu-guest-agent
+        enabled: true
+        state: started
+      ignore_errors: true
+
+    - name: Extract data from ACM lookup response
+      set_fact:
+        hosted_cluster: "{{ acm_lookup_response.json.data.searchResult[0]['items'][0].cluster }}"
+
+    - name: Get ManagedCluster
+      uri:
+        url: "https://api.<acm-cluster>.trusted.xyz.com:6443/apis/cluster.open-cluster-management.io/v1/managedclusters/{{ hosted_cluster }}"
+        headers:
+          Authorization: Bearer {{ acm_token }}
+        validate_certs: no
+      register: managed_cluster_response
+      delegate_to: 127.0.0.1
+      no_log: true
+
+    - name: Check ManagedCluster response
+      assert:
+        that:
+          - "'status' in managed_cluster_response.json"
+          - "'clusterClaims' in managed_cluster_response.json.status"
+          - managed_cluster_response.json.status.clusterClaims | selectattr('name', 'equalto', 'oauthredirecturis.openshift.io') | list != []
+        fail_msg: "oauthredirecturis clusterClaim missing from ManagedCluster {{ hosted_cluster }} status: managed_cluster_response"
+
+    - name: Get OAuth redirect URI
+      set_fact:
+        oauth_redirect_uri: "{{ (managed_cluster_response.json.status.clusterClaims | selectattr('name', 'equalto', 'oauthredirecturis.openshift.io') | list)[0].value }}"
+
+    - name: Extract hosting cluster name from OAuth redirect URL
+      set_fact:
+        hosting_cluster: "{{ (oauth_redirect_uri | regex_search('\\.apps\\.([^.]+)', '\\1'))[0] }}"
+
+    - name: Extract availability zone from hosting cluster name
+      set_fact:
+        availability_zone: "{{ (hosting_cluster | regex_search('-([a-z])[0-9][0-9]', '\\1'))[0] }}"
+
+    - name: Show extracted data
+      debug:
+        msg: "hostingCluster: {{ hosting_cluster | upper }}, hostedCluster: {{ hosted_cluster | upper }}, availabilityZone: {{ availability_zone | upper }}"
+
+    - name: Custom actions for RedHat or Rocky 8
+      block:
+
+      - name: Check if custom_fstrim.sh already exists
+        stat:
+          path: "{{workingdir.path}}/custom_fstrim.sh"
+        register: fstrim_stat
+
+      - name: Copy custom_fstrim.sh to VM and make it executable
+        copy:
+          src: ./custom_fstrim.sh
+          dest: "{{workingdir.path}}/custom_fstrim.sh"
+          mode: "0755"
+        become: yes
+        when: not fstrim_stat.stat.exists
+
+      - name: Execute custom_fstrim.sh
+        shell: "{{workingdir.path}}/custom_fstrim.sh"
+        become: yes
+        register: fstrim_result
+
+      - name: Display fstrim_result
+        debug:
+          var: fstrim_result.stdout
+
+      when: (ansible_facts.distribution == "RedHat" or ansible_facts.distribution == "Rocky") and (ansible_facts.distribution_major_version == "8" or ansible_facts.distribution_major_version == "9")
+
+    - name: Update VM in CMDB
+      uri: 
+        url: "https://cloudgateway.trusted.xyz.com:8443/cloudgateway/asknow/ci-servers/{{ inventory_hostname_short }}/actions/update-osv-vm"
+        method: POST
+        headers:
+          Authorization: Bearer {{ cloudview_token }}
+        body_format: json
+        body:
+          hostingCluster: "{{ hosting_cluster | upper }}"
+          hostedCluster: "{{ hosted_cluster | upper }}"
+          advancedClusterManagement: "{{ acm_cluster | upper }}"
+          availabilityZone: "{{ availability_zone | upper }}"
+          rcConsole: "{{ hosted_cluster | upper }}"
+        status_code:
+          - 200
+          - 202
+      register: cmdb_response
+      until: cmdb_response.status == 200 or cmdb_response.status == 202
+      retries: 10
+      delay: 30
+      delegate_to: 127.0.0.1
+      no_log: true
+      ignore_errors: true
+
+    - name: Get backup status of VM in CMDB
+      uri:
+        url: "https://cloudgateway.trusted.xyz.com:8443/cloudgateway/asknow/ci-servers/host-name/{{ inventory_hostname_short }}"
+        method: GET
+        headers:
+          Authorization: Bearer {{ cloudview_token }}
+        status_code:
+          - 200
+          - 202
+      register: cmdb_ci_details
+      until: cmdb_ci_details.status == 200 or cmdb_ci_details.status == 202
+      retries: 10
+      delay: 30
+      delegate_to: 127.0.0.1
+      no_log: true
+
+    - name: Enroll in Backup Automation
+      block:
+
+        - name: Patch my name in the todo configmap
+          delegate_to: 127.0.0.1
+          uri: 
+            url: "https://api.{{ acm_cluster }}.trusted.xyz.com:6443/api/v1/namespaces/xyz-vmobj-bkp/configmaps/backup-vms"
+            validate_certs: no
+            method: PATCH
+            headers: 
+               Authorization: "Bearer {{ acm_token }}"
+               Content-Type: application/merge-patch+json
+            body_format: json
+            body: >-
+              {{
+              {
+                "data": { inventory_hostname_short: "" }
+              }
+              }}
+
+      when:
+        - cmdb_ci_details.json.backupRequired
+

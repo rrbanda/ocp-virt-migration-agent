@@ -25,3 +25,6 @@ dist/
 # Kubernetes secrets (never commit)
 *-secret.yaml
 *-credentials.yaml
+
+# Session handoff docs (contain cluster URLs and credential hints)
+HANDOFF.md

@@ -1,0 +1,1102 @@
+---
+- name: Pre-migration Check
+  hosts: all
+  gather_facts: yes
+  become_method: sudo
+  become: yes
+
+  tasks:
+#    - name: Debug
+#      debug:
+#        var: ansible_facts
+    
+    - name: Identify current hypervisor
+      shell: "/sbin/dmidecode --type system"
+      register: dmidecode
+      become: yes
+
+    - name: Assert VM is on VMware
+      assert:
+        that: "'VMware' in dmidecode.stdout"
+
+    - name: Operating System
+      debug:
+        msg: "{{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}"
+
+    - name: Verify Valid OS
+      assert:
+        that: (ansible_facts.distribution == "RedHat" and (ansible_facts.distribution_major_version == "7" or ansible_facts.distribution_major_version == "8" or ansible_facts.distribution_major_version == "9")) or
+              (ansible_facts.distribution == "CentOS" and (ansible_facts.distribution_major_version == "7")) or
+              (ansible_facts.distribution == "Rocky" and (ansible_facts.distribution_major_version == "8" or ansible_facts.distribution_major_version == "9")) or
+              (ansible_facts.distribution == "Ubuntu" and (ansible_facts.distribution_major_version == "20" or ansible_facts.distribution_major_version == "22"))
+
+    - name: Get osvmig_ dirs from var opt
+      find:
+        paths: "/var/opt/"
+        patterns: "osvmig_*"
+        file_type: directory
+        use_regex: yes
+      register: osvmig_dirs
+      become: yes
+
+    - name: Delete osvmig_ dirs
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ osvmig_dirs.files }}"
+      become: yes
+
+    - name: Create migration working directory
+      file:
+        state: directory
+        path: "/var/opt/osvmig_{{ query('community.general.random_string', upper=false, numbers=false, special=false, length=5) | first }}"
+      register: workingdir
+
+    - name:  Detect active nfs mount
+      shell: "awk '$3 ~ /^nfs/ {found=1} END {exit !found}' /proc/mounts"
+      register: nfs_check
+      changed_when: false
+      failed_when: false 
+
+    - name: Check if system has NFS mount (is-enabled)
+      command: systemctl is-enabled remote-fs.target
+      register: remote_fs_enabled
+      changed_when: false
+      failed_when: false
+      when: nfs_check.rc == 0
+
+    - name: Assert remote-fs is enabled if there are NFS mounts
+      assert:
+        that: (remote_fs_enabled.stdout | default('') | trim) == 'enabled'
+      when: nfs_check.rc == 0
+
+#    - name: Enable remote-fs.target if disabled
+#      ansible.builtin.systemd:
+#        name: remote-fs.target
+#        enabled: true
+#      when:
+#        - nfs_check.rc == 0
+#        - (remote_fs_enabled.stdout | default('') | trim) == 'disabled'
+#
+#    - name: Start target
+#      ansible.builtin.systemd:
+#        name: remote-fs.target
+#        state: started
+#      when: nfs_check.rc == 0
+
+    - name: Check if vmware-guest-tools installed
+      command: "vmware-toolbox-cmd -v"
+      register: vmware_tools_version
+      failed_when: vmware_tools_version.rc != 0
+
+    - name: Check if vmtoolsd.service is running
+      command: "systemctl status vmtoolsd.service"
+      register: vmware_tools_status
+      failed_when: vmware_tools_status.rc != 0
+
+
+    - name: Handling kernel in Red Hat or CentOS 7
+      block:
+      - name: Read in /proc/cmdline
+        slurp:
+          src: /proc/cmdline
+        register: proccmdline
+
+      - name: List kernelopts from proccmdline in Red Hat
+        set_fact:
+          proccmdline_list: "{{ (proccmdline.content | b64decode | regex_search('root=.*') | default('', true)).split() }}"
+
+      - name: Debug proccmdline_list Red Hat
+        debug:
+          var: proccmdline_list
+        
+      - name: Read in grub2-mkconfig and get output Red Hat 7
+        shell: "IDX=$(/usr/sbin/grubby --default-index); /usr/sbin/grubby --info=$(/usr/sbin/grubby --default-kernel) | sed -n \"/index=${IDX}/,/index=/p\" | egrep 'args|root' | sed 's/.*args=//g'"
+        register: grubgen
+        become: yes
+
+      - name: Set grub2-mkconfig list
+        set_fact:
+          grubgen_list: "{{ (grubgen.stdout | replace('\"','') | default('', true)).split() }}"
+
+      - name: Debug grub2-mkconfig Red Hat 7
+        debug:
+          var: grubgen_list
+
+#      - name: Find missing parameters from grubgen_list compared to proccmdline_list
+#        set_fact:
+#          new_kernelopts: "{{ proccmdline_list | difference(grubgen_list) }}"
+#
+#      - name: Debug new_kernelopts
+#        debug:
+#          var: new_kernelopts
+
+      - name: Preserve a copy of /etc/default/grub
+        copy:
+          src: /etc/default/grub
+          dest: "{{ workingdir.path }}/defaultgrub"
+          remote_src: yes
+          follow: yes
+        become: yes
+
+#      - name: Ensure all kernel parameters are present in /etc/default/grub
+#        lineinfile:
+#          path: /etc/default/grub
+#          regexp: '^GRUB_CMDLINE_LINUX='
+#          line: "GRUB_CMDLINE_LINUX=\"{{ (grubgen_list + new_kernelopts) | unique | join(' ') }}\""
+#        when: new_kernelopts | length > 0
+
+      - name: Ensure that when v2v generates new grub the kernel args match Red Hat
+        assert:
+          that:
+            - ( proccmdline_list | difference(grubgen_list) | length ) == 0
+            - ( grubgen_list | difference(proccmdline_list) | length ) == 0
+
+      - name: Preserve a copy of /etc/grub2.cfg Redhat
+        copy:
+          src: /etc/grub2.cfg
+          dest: "{{ workingdir.path }}/grub2.cfg"
+          remote_src: yes
+          follow: yes
+        become: yes
+
+      - name: List kernel packages Red Hat
+        shell: "rpm -qa kernel"
+        register: installed_kernel
+        become: yes
+
+      - name: Assert running kernel is installed package
+        assert:
+          that: ansible_facts.kernel in installed_kernel.stdout
+
+      - name: Stat grubenv
+        stat:
+          path: /boot/grub2/grubenv
+        register: grubenv_stat
+
+      - name: grubenv is exactly 1024 bytes
+        assert:
+          that:
+            - grubenv_stat.stat.size == 1024
+
+      - name: Check if rpmdb_fix.sh already exists
+        stat:
+          path: "{{workingdir.path}}/rpmdb_fix.sh"
+        register: rpmdb_stat
+
+      - name: Copy rpmdb_fix.sh to VM and make it executable
+        copy:
+          src: ./rpmdb_fix.sh
+          dest: "{{workingdir.path}}/rpmdb_fix.sh"
+          mode: "0755"
+        become: yes
+        when: not rpmdb_stat.stat.exists
+
+      - name: Execute rpmdb_fix.sh
+        shell: "{{workingdir.path}}/rpmdb_fix.sh"
+        become: yes
+        register: rmpdb_result
+
+      - name: Display rmpdb_result
+        debug:
+          var: rmpdb_result.stdout
+
+      when: (ansible_facts.distribution == "RedHat" and ansible_facts.distribution_major_version == "7") or (ansible_facts.distribution == "CentOS" and ansible_facts.distribution_major_version == "7")
+
+
+    - name: Handling kernel in Red Hat or Rocky 8 or 9
+      block:
+      - name: Read in /proc/cmdline
+        slurp:
+          src: /proc/cmdline
+        register: proccmdline
+
+      - name: List kernelopts from proccmdline in Red Hat or Rocky
+        set_fact:
+          proccmdline_list: "{{ (proccmdline.content | b64decode | regex_search('root=.*') | default('', true)).split() }}"
+
+      - name: Debug proccmdline_list Red Hat or Rocky
+        debug:
+          var: proccmdline_list
+        
+      - name: Read in grub2-mkconfig and get output Red Hat or Rocky 8 or 9
+        shell: "grub2-mkconfig --no-grubenv-update | grep 'set kernelopts=' | sed 's/.*kernelopts=//g'"
+        register: grubgen
+        become: yes
+
+      - name: Set grub2-mkconfig list
+        set_fact:
+          grubgen_list: "{{ (grubgen.stdout | replace('\"','') | default('', true)).split() }}"
+
+      - name: Debug grub2-mkconfig Red Hat or Rocky
+        debug:
+          var: grubgen_list
+
+#      - name: Find missing parameters from grubgen_list compared to proccmdline_list
+#        set_fact:
+#          new_kernelopts: "{{ proccmdline_list | difference(grubgen_list) }}"
+#
+#      - name: Debug new_kernelopts
+#        debug:
+#          var: new_kernelopts
+
+      - name: Stat /var/opt/defaultgrub.bak
+        stat:
+          path: /var/opt/defaultgrub.bak
+        register: defaultgrub_stat
+
+      - name: Preserve a copy of /etc/default/grub
+        copy:
+          src: /etc/default/grub
+          dest: "/var/opt/defaultgrub.bak"
+          remote_src: yes
+          follow: yes
+        become: yes
+        when: not defaultgrub_stat.stat.exists
+
+#      - name: Ensure all kernel parameters are present in /etc/default/grub
+#        lineinfile:
+#          path: /etc/default/grub
+#          regexp: '^GRUB_CMDLINE_LINUX='
+#          line: "GRUB_CMDLINE_LINUX=\"{{ (grubgen_list + new_kernelopts) | unique | join(' ') }}\""
+#        when: new_kernelopts | length > 0
+
+      - name: Sync Default Grub
+        block:
+
+        - name: Copy sync-default-grub.sh
+          copy:
+            src: ./sync-default-grub.sh
+            dest: "{{ workingdir.path }}/sync-default-grub.sh"
+            mode: "0755"
+          become: yes
+
+        - name: Run sync-default-grub.sh
+          shell: "{{ workingdir.path }}/sync-default-grub.sh"
+          register: syncgrub
+          become: yes
+          failed_when: syncgrub.rc != 0
+
+        when: >
+          (( proccmdline_list | difference(grubgen_list) | length ) != 0) or
+          (( grubgen_list | difference(proccmdline_list) | length ) != 0)
+
+
+      - name: Read in again grub2-mkconfig and get output Red Hat or Rocky 8 or 9
+        shell: "grub2-mkconfig --no-grubenv-update | grep 'set kernelopts=' | sed 's/.*kernelopts=//g'"
+        register: grubgen
+        become: yes
+
+      - name: Set again grub2-mkconfig list
+        set_fact:
+          grubgen_list: "{{ (grubgen.stdout | replace('\"','') | default('', true)).split() }}"
+
+      - name: Debug again grub2-mkconfig Red Hat or Rocky
+        debug:
+          var: grubgen_list
+
+      - name: Ensure that when v2v generates new grub the kernel args match Red Hat or Rocky
+        assert:
+          that:
+            - ( proccmdline_list | difference(grubgen_list) | length ) == 0
+            - ( grubgen_list | difference(proccmdline_list) | length ) == 0
+
+      - name: Preserve a copy of /etc/grub2.cfg Redhat or Rocky
+        copy:
+          src: /etc/grub2.cfg
+          dest: "{{ workingdir.path }}/grub2.cfg"
+          remote_src: yes
+          follow: yes
+        become: yes
+
+      - name: List kernel packages Red Hat or Rocky
+        shell: "rpm -qa kernel"
+        register: installed_kernel
+        become: yes
+
+      - name: Assert running kernel is installed package
+        assert:
+          that: ansible_facts.kernel in installed_kernel.stdout
+
+      - name: Stat grubenv
+        stat:
+          path: /boot/grub2/grubenv
+        register: grubenv_stat
+
+      - name: grubenv is exactly 1024 bytes
+        assert:
+          that:
+            - grubenv_stat.stat.size == 1024
+
+      - name: Check if rpmdb_fix.sh already exists
+        stat:
+          path: "{{workingdir.path}}/rpmdb_fix.sh"
+        register: rpmdb_stat
+
+      - name: Copy rpmdb_fix.sh to VM and make it executable
+        copy:
+          src: ./rpmdb_fix.sh
+          dest: "{{workingdir.path}}/rpmdb_fix.sh"
+          mode: "0755"
+        become: yes
+        when: not rpmdb_stat.stat.exists
+
+      - name: Execute rpmdb_fix.sh
+        shell: "{{workingdir.path}}/rpmdb_fix.sh"
+        become: yes
+        register: rmpdb_result
+
+      - name: Display rmpdb_result
+        debug:
+          var: rmpdb_result.stdout
+
+      - name: Check partitions for bootflag
+        shell: "/sbin/fdisk -l | grep '^/' | grep '*' | wc -l"
+        register: partition_bootflags
+        failed_when: partition_bootflags.stdout | int != 1
+
+      when: (ansible_facts.distribution == "RedHat" or ansible_facts.distribution == "Rocky") and ansible_facts.distribution_major_version != "7"
+
+
+    - name: Handling kernel in Ubuntu
+      block:
+      - name: Read in grub env Ubuntu
+        ansible.builtin.slurp:
+          src: /boot/grub/grubenv
+        register: grubenv
+        become: yes
+        
+      - name: debug running Ubuntu
+        ansible.builtin.debug: 
+          msg: "{{ grubenv.content | b64decode | regex_search('kernelopts=.*') }}"
+          
+      - name: Preserve a copy of /boot/grub/grub.cfg Ubuntu
+        copy:
+          src: /boot/grub/grub.cfg
+          dest: "{{ workingdir.path }}/grub.cfg"
+          remote_src: yes
+          follow: yes
+        become: yes
+
+      - name: Stat grubenv
+        stat:
+          path: /boot/grub/grubenv
+        register: grubenv_stat
+
+      - name: grubenv is exactly 1024 bytes
+        assert:
+          that:
+            - grubenv_stat.stat.size == 1024
+
+      when: ansible_facts.distribution == "Ubuntu"
+
+
+    - name: Write AnsibleFacts to file
+      copy:
+        content: "{{ ansible_facts | to_nice_json }}"
+        dest: "{{ workingdir.path }}/ansiblefacts.json"
+
+    - name: CPU and Memory
+      debug:
+        msg: "cpu: {{ ansible_facts.processor_vcpus }}, memory_mb: {{ ansible_facts.memtotal_mb }}"
+
+    - name: Network Interfaces
+      debug:
+        msg: "{{ item }} [{{ ansible_facts[item]['macaddress']|default(None) }}]: {{ ansible_facts[item]['ipv4']|default(None) }}"
+      loop: "{{ ansible_facts.interfaces }}"
+
+    - name: Verify fstab does not contain /dev/sd
+      lineinfile:
+        path: /etc/fstab
+        regexp: '^/dev/sd'
+        state: absent
+      check_mode: yes
+      register: fstab
+      failed_when: fstab is changed
+
+    - name: Verify Recent Reboot (Uptime < 30days)
+      assert:
+        that:
+          - ansible_facts.uptime_seconds|int < ( 60 * 60 * 24 * 30 )
+      ignore_errors: true
+      
+#    - name: Refresh subscription-manager
+#      command: "subscription-manager refresh"
+#      become: yes
+#      when: ansible_facts.distribution == "RedHat" or ansible_facts.distribution == "Rocky"
+
+    - name: dnf install RHEL7
+      block:
+      - name: Check if qemu-guest-agent can be installed by MTV
+        command: "yum install --disablerepo=* --enablerepo=rhel-7-server-rpms,rhel-7-server-optional-rpms,rhel-server-rhscl-7-rpms --disableplugin=foreman-protector --downloadonly --downloaddir={{ workingdir.path }} qemu-guest-agent"
+        register: qemuga_download_test
+        failed_when: qemuga_download_test.rc != 0
+
+      - name: Ensure selinux-policy-targeted installed RHEL7
+        command: "yum install --disablerepo=* --enablerepo=rhel-7-server-rpms,rhel-7-server-optional-rpms,rhel-server-rhscl-7-rpms selinux-policy-targeted -y"
+        become: yes
+
+      - name: Protect packages from autoremove of open-vm-tools RHEL7
+        shell: "/usr/sbin/yumdb set reason user {{ item }}"
+        loop:
+          - xmlsec1-openssl
+          - xmlsec1
+          - fuse
+          - fuse-common
+          - fuse-libs
+          - libxslt
+          - libmspack
+          - libffi
+          - libffi-devel
+          - pciutils
+        become: yes
+        ignore_errors: true
+
+      - name: Get current timezone RHEL7
+        shell: "timedatectl | grep 'Time zone'"
+        register: timezone_result
+ 
+      - name: Check LocalRTC if PDT timezone RHEL7
+        shell: "timedatectl | grep 'RTC in local TZ'"
+        register: localrtc_result
+        when: "'US/Pacific' in timezone_result.stdout or 'America/Los_Angeles' in timezone_result.stdout or 'PST8PDT' in timezone_result.stdout"
+
+      - name: Fix LocalRTC if necessary
+        shell: "timedatectl set-local-rtc 0"
+        when:
+          - localrtc_result.stdout is defined
+          - "'yes' in localrtc_result.stdout"
+
+#      - name: Ensure sosreport installed RHEL7
+#        command: "yum install --disablerepo=* --enablerepo=rhel-7-server-rpms,rhel-7-server-optional-rpms,rhel-server-rhscl-7-rpms sos -y"
+#        become: yes
+#
+#      - name: Run sos report
+#        shell: "/usr/sbin/sosreport --batch --tmp-dir={{ workingdir.path }}"
+#        become: yes
+      when:
+        - ansible_facts.distribution == "RedHat"
+        - ansible_facts.distribution_major_version == "7"
+
+
+    - name: dnf install CentOS7
+      block:
+      - name: Check if qemu-guest-agent can be installed by MTV
+        command: "yum install --disablerepo=* --enablerepo=xyz_centos7-x86_64_centos7-x86_64_os,xyz_centos7-x86_64_centos7-x86_64_updates,xyz_centos7-x86_64_centos7-x86_64_extras,xyz_centos7-x86_64_hashed-ciq_cbr_79-x86_64_updates --disableplugin=foreman-protector --downloadonly --downloaddir={{ workingdir.path }} qemu-guest-agent"
+        register: qemuga_download_test
+        failed_when: qemuga_download_test.rc != 0
+
+      - name: Ensure selinux-policy-targeted installed CentOS7
+        command: "yum install --disablerepo=* --enablerepo=xyz_centos7-x86_64_centos7-x86_64_os,xyz_centos7-x86_64_centos7-x86_64_updates,xyz_centos7-x86_64_centos7-x86_64_extras,xyz_centos7-x86_64_hashed-ciq_cbr_79-x86_64_updates selinux-policy-targeted -y"
+        become: yes
+
+      - name: Protect packages from autoremove of open-vm-tools CentOS7
+        shell: "/usr/sbin/yumdb set reason user {{ item }}"
+        loop:
+          - xmlsec1-openssl
+          - xmlsec1
+          - fuse
+          - fuse-common
+          - fuse-libs
+          - libxslt
+          - libmspack
+          - libffi
+          - libffi-devel
+          - pciutils
+        become: yes
+        ignore_errors: true
+
+      - name: Get current timezone CentOS7
+        shell: "timedatectl | grep 'Time zone'"
+        register: timezone_result
+
+      - name: Check LocalRTC if PDT timezone CentOS7
+        shell: "timedatectl | grep 'RTC in local TZ'"
+        register: localrtc_result
+        when: "'US/Pacific' in timezone_result.stdout or 'America/Los_Angeles' in timezone_result.stdout or 'PST8PDT' in timezone_result.stdout"
+
+      - name: Fix LocalRTC if necessary
+        shell: "timedatectl set-local-rtc 0"
+        when:
+          - localrtc_result.stdout is defined
+          - "'yes' in localrtc_result.stdout"
+
+#      - name: Ensure sosreport installed CentOS7
+#        command: "yum install --disablerepo=* --enablerepo=rhel-7-server-rpms,rhel-7-server-optional-rpms,rhel-server-rhscl-7-rpms sos -y"
+#        become: yes
+#
+#      - name: Run sos report
+#        shell: "/usr/sbin/sosreport --batch --tmp-dir={{ workingdir.path }}"
+#        become: yes
+      when:
+        - ansible_facts.distribution == "CentOS"
+        - ansible_facts.distribution_major_version == "7"
+
+
+    - name: dnf install RHEL8
+      block:
+      - name: Check if qemu-guest-agent can be installed by MTV
+        dnf:
+          name: qemu-guest-agent
+          state: present
+          download_only: true
+          download_dir: "{{ workingdir.path }}"
+          disablerepo: "*"
+          enablerepo: rhel-8-for-x86_64-baseos-rpms,rhel-8-for-x86_64-appstream-rpms
+          disable_plugin:
+            - foreman-protector
+        become: yes
+
+      - name: Ensure selinux-policy-targeted installed RHEL8
+        dnf:
+          name: selinux-policy-targeted
+          state: present
+          disablerepo: "*"
+          enablerepo: rhel-8-for-x86_64-baseos-rpms,rhel-8-for-x86_64-appstream-rpms
+        become: yes
+
+      - name: Protect packages from autoremove of open-vm-tools RHEL8
+        shell: "dnf mark install {{ item }}"
+        loop:
+          - xmlsec1-openssl
+          - xmlsec1
+          - fuse
+          - fuse-common
+          - fuse-libs
+          - libxslt
+          - libmspack
+          - libffi
+          - libffi-devel
+          - pciutils
+        become: yes
+        ignore_errors: true
+
+      - name: Ensure augeas tool installed RHEL8
+        dnf:
+          name: augeas
+          state: present
+          disablerepo: "*"
+          enablerepo: rhel-8-for-x86_64-baseos-rpms,rhel-8-for-x86_64-appstream-rpms
+          disable_plugin:
+            - foreman-protector
+        become: yes
+
+#      - name: Backup fstab file
+#        copy:
+#          src: /etc/fstab
+#          dest: "{{ workingdir.path }}/fstab"
+#          remote_src: yes
+#          follow: yes
+#        become: yes
+#
+#      - name: Identify scsi devices in fstab
+#        shell: "grep '^/dev/sd' /etc/fstab | awk '{print $1}'"
+#        register: scsi_devices_fstab
+#
+#      - name: Lookup UUIDs of scsi devices
+#        shell: "blkid -s UUID -o value {{ item }}"
+#        loop: "{{ scsi_devices_fstab.stdout_lines }}"
+#        register: scsi_devices_blkids
+#
+#      - name: Debug UUIDs
+#        debug:
+#          var: "{{ item.stdout }}"
+#        loop: scsi_devices_blkids.results
+#        when: scsi_devices_blkids is defined
+
+      - name: Augtool check fstab for errors
+        shell: "echo -n 'errors' | /usr/bin/augtool -l /etc/fstab | grep '^Error' | wc -l"
+        register: augtool_error_count 
+        failed_when: augtool_error_count.stdout | int != 0
+
+      - name: Ensure augeas tool uninstalled RHEL8
+        dnf:
+          name: augeas
+          state: absent
+          disablerepo: "*"
+          enablerepo: rhel-8-for-x86_64-baseos-rpms,rhel-8-for-x86_64-appstream-rpms
+          disable_plugin:
+            - foreman-protector
+        become: yes
+
+      - name: Get current timezone RHEL8
+        command: timedatectl show -p Timezone --value
+        register: timezone_result
+ 
+      - name: Check LocalRTC if PDT timezone RHEL8
+        command: timedatectl show -p LocalRTC --value
+        register: localrtc_result
+        when: timezone_result.stdout | trim in ['US/Pacific', 'America/Los_Angeles', 'PST8PDT']
+
+      - name: Fix LocalRTC if necessary
+        shell: "timedatectl set-local-rtc 0"
+        when:
+          - localrtc_result.stdout is defined
+          - localrtc_result.stdout | trim | lower != 'no'
+
+#      - name: Ensure sosreport installed RHEL8
+#        dnf:
+#          name: sos
+#          state: present
+#          disablerepo: "*"
+#          enablerepo: rhel-8-for-x86_64-baseos-rpms,rhel-8-for-x86_64-appstream-rpms
+#        become: yes
+#
+#      - name: Run sos report
+#        command: "sos report --batch --tmp-dir={{ workingdir.path }}"
+#        become: yes
+      when:
+        - ansible_facts.distribution == "RedHat"
+        - ansible_facts.distribution_major_version == "8"
+        
+    - name: dnf install RHEL9
+      block:
+      - name: Check if qemu-guest-agent can be installed by MTV
+        dnf:
+          name: qemu-guest-agent
+          state: present
+          download_only: true
+          download_dir: "{{ workingdir.path }}"
+          disablerepo: "*"
+          enablerepo: rhel-9-for-x86_64-baseos-rpms,rhel-9-for-x86_64-appstream-rpms
+          disable_plugin:
+            - foreman-protector
+        become: yes
+
+      - name: Ensure selinux-policy-targeted installed RHEL9
+        dnf:
+          name: selinux-policy-targeted
+          state: present
+          disablerepo: "*"
+          enablerepo: rhel-9-for-x86_64-baseos-rpms,rhel-9-for-x86_64-appstream-rpms
+        become: yes
+
+      - name: Protect packages from autoremove of open-vm-tools RHEL9
+        shell: "dnf mark install {{ item }}"
+        loop:
+          - xmlsec1-openssl
+          - xmlsec1
+          - fuse
+          - fuse-common
+          - fuse-libs
+          - libxslt
+          - libmspack
+          - libffi
+          - libffi-devel
+          - pciutils
+        become: yes
+        ignore_errors: true
+
+      - name: Ensure augeas tool installed RHEL9
+        dnf:
+          name: augeas
+          state: present
+          disablerepo: "*"
+          enablerepo: rhel-9-for-x86_64-baseos-rpms,rhel-9-for-x86_64-appstream-rpms
+          disable_plugin:
+            - foreman-protector
+        become: yes
+
+      - name: Augtool check fstab for errors
+        shell: "echo -n 'errors' | /usr/bin/augtool -l /etc/fstab | grep '^Error' | wc -l"
+        register: augtool_error_count 
+        failed_when: augtool_error_count.stdout | int != 0
+
+      - name: Ensure augeas tool uninstalled RHEL9
+        dnf:
+          name: augeas
+          state: absent
+          disablerepo: "*"
+          enablerepo: rhel-9-for-x86_64-baseos-rpms,rhel-9-for-x86_64-appstream-rpms
+          disable_plugin:
+            - foreman-protector
+        become: yes
+
+      - name: Get current timezone RHEL9
+        command: timedatectl show -p Timezone --value
+        register: timezone_result
+ 
+      - name: Check LocalRTC if PDT timezone RHEL9
+        command: timedatectl show -p LocalRTC --value
+        register: localrtc_result
+        when: timezone_result.stdout | trim in ['US/Pacific', 'America/Los_Angeles', 'PST8PDT']
+
+      - name: Fix LocalRTC if necessary
+        shell: "timedatectl set-local-rtc 0"
+        when:
+          - localrtc_result.stdout is defined
+          - localrtc_result.stdout | trim | lower != 'no'
+
+#      - name: Ensure sosreport installed RHEL9
+#        dnf:
+#          name: sos
+#          state: present
+#          disablerepo: "*"
+#          enablerepo: rhel-9-for-x86_64-baseos-rpms,rhel-9-for-x86_64-appstream-rpms
+#        become: yes
+#
+#      - name: Run sos report
+#        command: "sos report --batch --tmp-dir={{ workingdir.path }}"
+#        become: yes
+      when:
+        - ansible_facts.distribution == "RedHat"
+        - ansible_facts.distribution_major_version == "9"
+        
+    - name: dnf install Rocky8
+      block:
+      - name: Check if qemu-guest-agent can be installed by MTV
+        dnf:
+          name: qemu-guest-agent
+          state: present
+          download_only: true
+          download_dir: "{{ workingdir.path }}"
+          disablerepo: "*"
+          enablerepo: xyz_rocky8-x86_64_rocky8-x86_64_baseos,xyz_rocky8-x86_64_rocky8-x86_64_appstream,xyz_rocky8-x86_64_rocky8-x86_64_extras
+          disable_plugin:
+            - foreman-protector
+        become: yes
+
+      - name: Ensure selinux-policy-targeted installed Rocky8
+        dnf:
+          name: selinux-policy-targeted
+          state: present
+          disablerepo: "*"
+          enablerepo: xyz_rocky8-x86_64_rocky8-x86_64_baseos,xyz_rocky8-x86_64_rocky8-x86_64_appstream,xyz_rocky8-x86_64_rocky8-x86_64_extras
+        become: yes
+
+      - name: Protect packages from autoremove of open-vm-tools Rocky8
+        shell: "dnf mark install {{ item }}"
+        loop:
+          - xmlsec1-openssl
+          - xmlsec1
+          - fuse
+          - fuse-common
+          - fuse-libs
+          - libxslt
+          - libmspack
+          - libffi
+          - libffi-devel
+          - pciutils
+        become: yes
+        ignore_errors: true
+
+      - name: Ensure augeas tool installed Rocky8
+        dnf:
+          name: augeas 
+          state: present
+          disablerepo: "*"
+          enablerepo: xyz_rocky8-x86_64_rocky8-x86_64_baseos,xyz_rocky8-x86_64_rocky8-x86_64_appstream,xyz_rocky8-x86_64_rocky8-x86_64_extras
+          disable_plugin:
+            - foreman-protector
+        become: yes
+
+      - name: Augtool check fstab for errors
+        shell: "echo -n 'errors' | /usr/bin/augtool -l /etc/fstab | grep '^Error' | wc -l"
+        register: augtool_error_count 
+        failed_when: augtool_error_count.stdout | int != 0
+
+      - name: Ensure augeas tool uninstalled Rocky8
+        dnf:
+          name: augeas 
+          state: absent
+          disablerepo: "*"
+          enablerepo: xyz_rocky8-x86_64_rocky8-x86_64_baseos,xyz_rocky8-x86_64_rocky8-x86_64_appstream,xyz_rocky8-x86_64_rocky8-x86_64_extras
+          disable_plugin:
+            - foreman-protector
+        become: yes
+
+      - name: Get current timezone Rocky8
+        command: timedatectl show -p Timezone --value
+        register: timezone_result
+ 
+      - name: Check LocalRTC if PDT timezone Rocky8
+        command: timedatectl show -p LocalRTC --value
+        register: localrtc_result
+        when: timezone_result.stdout | trim in ['US/Pacific', 'America/Los_Angeles', 'PST8PDT']
+
+      - name: Fix LocalRTC if necessary
+        shell: "timedatectl set-local-rtc 0"
+        when:
+          - localrtc_result.stdout is defined
+          - localrtc_result.stdout | trim | lower != 'no'
+
+#      - name: Ensure sosreport installed Rocky8
+#        dnf:
+#          name: sos
+#          state: present
+#          disablerepo: "*"
+#          enablerepo: xyz_rocky8-x86_64_rocky8-x86_64_baseos,xyz_rocky8-x86_64_rocky8-x86_64_appstream,xyz_rocky8-x86_64_rocky8-x86_64_extras
+#        become: yes
+#
+#      - name: Run sos report
+#        command: "sos report --batch --tmp-dir={{ workingdir.path }}"
+#        become: yes
+      when:
+        - ansible_facts.distribution == "Rocky"
+        - ansible_facts.distribution_major_version == "8"
+        
+    - name: dnf install Rocky9
+      block:
+      - name: Check if qemu-guest-agent can be installed by MTV
+        dnf:
+          name: qemu-guest-agent
+          state: present
+          download_only: true
+          download_dir: "{{ workingdir.path }}"
+          disablerepo: "*"
+          enablerepo: xyz_rocky_rocky9-x86_64_baseos,xyz_rocky_rocky9-x86_64_appstream
+          disable_plugin:
+            - foreman-protector
+        become: yes
+
+      - name: Ensure selinux-policy-targeted installed Rocky9
+        dnf:
+          name: selinux-policy-targeted
+          state: present
+          disablerepo: "*"
+          enablerepo: xyz_rocky_rocky9-x86_64_baseos,xyz_rocky_rocky9-x86_64_appstream
+        become: yes
+
+      - name: Protect packages from autoremove of open-vm-tools Rocky9
+        shell: "dnf mark install {{ item }}"
+        loop:
+          - xmlsec1-openssl
+          - xmlsec1
+          - fuse
+          - fuse-common
+          - fuse-libs
+          - libxslt
+          - libmspack
+          - libffi
+          - libffi-devel
+          - pciutils
+        become: yes
+        ignore_errors: true
+
+      - name: Ensure augeas tool installed Rocky9
+        dnf:
+          name: augeas
+          state: present
+          disablerepo: "*"
+          enablerepo: xyz_rocky_rocky9-x86_64_baseos,xyz_rocky_rocky9-x86_64_appstream
+          disable_plugin:
+            - foreman-protector
+        become: yes
+
+      - name: Augtool check fstab for errors
+        shell: "echo -n 'errors' | /usr/bin/augtool -l /etc/fstab | grep '^Error' | wc -l"
+        register: augtool_error_count 
+        failed_when: augtool_error_count.stdout | int != 0
+
+      - name: Ensure augeas tool uninstalled Rocky9
+        dnf:
+          name: augeas
+          state: absent
+          disablerepo: "*"
+          enablerepo: xyz_rocky_rocky9-x86_64_baseos,xyz_rocky_rocky9-x86_64_appstream
+          disable_plugin:
+            - foreman-protector
+        become: yes
+
+      - name: Get current timezone Rocky9
+        command: timedatectl show -p Timezone --value
+        register: timezone_result
+ 
+      - name: Check LocalRTC if PDT timezone Rocky9
+        command: timedatectl show -p LocalRTC --value
+        register: localrtc_result
+        when: timezone_result.stdout | trim in ['US/Pacific', 'America/Los_Angeles', 'PST8PDT']
+
+      - name: Fix LocalRTC if necessary
+        shell: "timedatectl set-local-rtc 0"
+        when:
+          - localrtc_result.stdout is defined
+          - localrtc_result.stdout | trim | lower != 'no'
+
+#      - name: Ensure sosreport installed Rocky9
+#        dnf:
+#          name: sos
+#          state: present
+#          disablerepo: "*"
+#          enablerepo: xyz_rocky_rocky9-x86_64_baseos,xyz_rocky_rocky9-x86_64_appstream
+#        become: yes
+#
+#      - name: Run sos report
+#        command: "sos report --batch --tmp-dir={{ workingdir.path }}"
+#        become: yes
+      when:
+        - ansible_facts.distribution == "Rocky"
+        - ansible_facts.distribution_major_version == "9"
+
+    - name: apt install Ubuntu
+      block:
+      - name: Check if qemu-guest-agent can be installed by MTV
+        shell: "cd {{ workingdir.path }}; apt download qemu-guest-agent; cd ~/"
+        register: qemuga_download_test
+        failed_when: qemuga_download_test.rc != 0
+
+#      - name: Ensure sosreport installed Ubuntu
+#        apt:
+#          name: sosreport
+#          state: present
+#        become: yes
+#
+#      - name: Run sos report
+#        command: "sos report --batch --tmp-dir={{ workingdir.path }}"
+#        become: yes
+      when: ansible_facts.distribution == "Ubuntu"
+
+    - name: Check if check-filesystem-usage.ksh already exists
+      stat: 
+        path:  "{{workingdir.path}}/check-filesystem-usage.ksh"
+      register: filesystem_stat
+    
+    - name: Copy check-filesystem-usage.ksh to VM and make it executable
+      copy:
+        src: ./check-filesystem-usage.ksh
+        dest: "{{workingdir.path}}/check-filesystem-usage.ksh"
+        mode: "0755"
+      become: yes
+      when: not filesystem_stat.stat.exists
+
+    - name: Execute check-filesystem-usage.ksh
+      shell: "{{workingdir.path}}/check-filesystem-usage.ksh"
+      become: yes
+      register: filesystem_usage_results
+
+    - name: Display filesystem_usage_results
+      debug:
+        var: filesystem_usage_results.stdout
+
+    - name: Mount points
+      debug:
+        msg: "{{ ansible_facts.mounts }}"
+
+    - name: Root mount point freespace > 100MB
+      assert:
+        that: 
+          -  item.size_available|int > ( 1024 * 1024 * 100 )
+      loop: "{{ ansible_facts.mounts }}" 
+      when: item.mount == '/'
+
+    - name: Boot mount point freespace > 50MB
+      assert:
+        that: 
+          -  item.size_available|int > ( 1024 * 1024 * 50 )
+      loop: "{{ ansible_facts.mounts }}" 
+      when: item.mount == '/boot'
+
+    - name: Other mount point freespace > 10MB
+      assert:
+        that: 
+          -  item.size_available|int > ( 1024 * 1024 * 10 )
+      loop: "{{ ansible_facts.mounts }}" 
+      when: 
+        - item.mount != '/'
+        - item.mount != '/boot'
+        - item.device is not regex('^/dev/loop')
+        - item.mount is not regex('^/sys')
+        - item.mount is not regex('^/run')
+        - item.fstype is not regex('^nfs')
+        - item.fstype is not regex('^cifs')
+        - item.fstype is not regex('^fuse')
+        - item.fstype is not regex('^autofs')
+
+    - name: Check partitions for crypt
+      shell: "lsblk -o NAME,TYPE | grep crypt | wc -l"
+      register: partition_crypts
+      failed_when: partition_crypts.stdout | int != 0
+
+#    - name: Check for encrypted devices
+#      assert:
+#        that:
+#          - "'crypto' not in item.value.fs_type"
+#      loop: "{{ ansible_facts.ohai_filesystem.by_device | dict2items }}"
+#      when: item.value.fs_type is defined
+#
+#    - name: Check for encrypted devices another way
+#      assert:
+#        that:
+#          - "'crypto' not in item.fstype"
+#      loop: "{{ ansible_facts.mounts }}"
+
+    - name: "Run Netbackup tool {{ inventory_hostname }}"
+      shell: "/usr/openv/netbackup/bin/bpclimagelist -U -client {{ inventory_hostname }}"
+      register: bpclimagelist
+      become: yes
+      ignore_errors: true
+
+    - name: Check for Full and Incr Backups in NBU
+      assert:
+        that: 
+          - "'Full Backup' in bpclimagelist.stdout"
+          - "'Incr Backup' in bpclimagelist.stdout"
+      when: bpclimagelist.rc == 0
+
+    - name: Touch isBackedUp file
+      file:
+        path: "{{ workingdir.path }}/isBackedUp"
+        state: touch
+      when: bpclimagelist.rc == 0
+
+    - name: Get osvmigration service account
+      set_fact:
+        osvmig_username: "{{ lookup('ansible.builtin.env', 'generic_username') }}"
+        osvmig_password: "{{ lookup('ansible.builtin.env', 'generic_password') }}"
+      no_log: true
+
+    - name: Retrieve CloudView token
+      uri:
+        url: "https://cloudgateway.trusted.xyz.com:8443/cloudgateway/security/tokens"
+        method: POST
+        body_format: json
+        body:
+          username: "{{ osvmig_username }}"
+          password: "{{ osvmig_password }}"
+          onBehalfOf: "{{ job_run_user }}"
+      register: cloudgateway_token_response
+      until: cloudgateway_token_response.status == 200 or cloudgateway_token_response.status == 202
+      retries: 10
+      delay: 30
+      delegate_to: 127.0.0.1
+      no_log: false
+
+    - name: Check CloudGateway token response
+      assert:
+        that: "'authToken' in cloudgateway_token_response.json"
+        fail_msg: "Unexpected CloudGateway response: {{ cloudgateway_token_response }}"
+      no_log: true
+
+    - name: Extract CloudView token from response
+      set_fact:
+        cloudview_token: "{{ cloudgateway_token_response.json.authToken }}"
+      no_log: true
+
+    - name: Get status of VM in CMDB
+      uri:
+        url: "https://cloudgateway.trusted.xyz.com:8443/cloudgateway/asknow/ci-servers/host-name/{{ inventory_hostname_short }}"
+        method: GET
+        headers:
+          Authorization: Bearer {{ cloudview_token }}
+        status_code:
+          - 200
+          - 202
+      register: cmdb_response
+      until: cmdb_response.status == 200 or cmdb_response.status == 202
+      retries: 10
+      delay: 30
+      delegate_to: 127.0.0.1
+      no_log: true
+
+    - name: Assert VM is not Decommissioning
+      assert:
+        that: cmdb_response.json.lifeCycleStatus != "Decommissioning"
+
+    - name: Change Owner
+      file:
+        path: "{{ workingdir.path }}"
+        owner: svcansible
+        group: ansible
+        recurse: yes
+      become: yes
+

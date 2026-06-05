@@ -1,0 +1,176 @@
+STDOUT_lines :
+No STDOUT available for this Task
+
+STDERR_lines :
+No STDERR available for this Task
+Playbook Output:
+Slice 1.map.0:
+JOB partition 1 : Slice number 0:
+
+Enter passphrase for /runner/artifacts/43616745/ssh_key_data:
+Identity added: /runner/artifacts/43616745/ssh_key_data (/runner/artifacts/43616745/ssh_key_data)
+
+PLAY [Post-migration Check Linux] **********************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [hostname.xyz.com  ]
+
+TASK [Verify OSV platform] *****************************************************
+ok: [hostname.xyz.com  ] => {
+"changed": false,
+"msg": "All assertions passed"
+}
+
+TASK [Verify Linux OS] *********************************************************
+ok: [hostname.xyz.com  ] => {
+"changed": false,
+"msg": "All assertions passed"
+}
+
+TASK [Get osvmigration service account] ****************************************
+ok: [hostname.xyz.com  ]
+
+TASK [Retrieve ACM token] ******************************************************
+ok: [hostname.xyz.com   -> 127.0.0.1]
+
+TASK [Check ACM token response] ************************************************
+ok: [hostname.xyz.com  ]
+
+TASK [Extract ACM token from response] *****************************************
+ok: [hostname.xyz.com  ]
+
+TASK [Search for VM VM-NAME in ACM] **************************************
+ok: [hostname.xyz.com   -> 127.0.0.1]
+
+TASK [Verify that there is exactly one VM in ACM] ******************************
+ok: [hostname.xyz.com  ] => {
+"changed": false,
+"msg": "All assertions passed"
+}
+
+TASK [Get osvmig_ dirs from var opt] *******************************************
+ok: [hostname.xyz.com  ]
+
+TASK [Identify latest osvmig_dir] **********************************************
+ok: [hostname.xyz.com  ]
+
+TASK [Slurp premig_facts] ******************************************************
+ok: [hostname.xyz.com  ]
+
+TASK [Load premig_facts] *******************************************************
+ok: [hostname.xyz.com  ]
+
+TASK [Verify CPU, Memory unchanged] ********************************************
+ok: [hostname.xyz.com  ] => {
+"changed": false,
+"msg": "All assertions passed"
+}
+
+TASK [Verify default network unchanged] ****************************************
+ok: [hostname.xyz.com  ] => {
+"changed": false,
+"msg": "All assertions passed"
+}
+
+TASK [Check if isBackedUp exists] **********************************************
+ok: [hostname.xyz.com  ]
+
+TASK [Warn about skipped premigration fact check] ******************************
+skipping: [hostname.xyz.com  ]
+
+TASK [Get today's date in YYYYMMDD format] *************************************
+ok: [hostname.xyz.com  ]
+
+TASK [Reconfigure VM-as-Migrated Block] ****************************************
+[WARNING]: Collection community.vmware does not support Ansible version 2.14.13
+included: /runner/project/automation/playbooks/block-vm-as-migrated.yaml for hostname.xyz.com   => (item=vCenter.xyz.com  )
+
+TASK [Gather lowercase VM Info from vCenter.xyz.com  ] *******************
+ok: [hostname.xyz.com   -> 127.0.0.1]
+
+TASK [Gather uppercase VM Info from vCenter.xyz.com  ] *******************
+fatal: [hostname.xyz.com   -> 127.0.0.1]: FAILED! => {"changed": false, "msg": "Failed to find virtual machine VM-NAME"}
+...ignoring
+
+TASK [Merge upper and lower vm_info] *******************************************
+ok: [hostname.xyz.com  ]
+
+TASK [Set VM Count to 0 if vm_info.virtual_machines undefined] *****************
+skipping: [hostname.xyz.com  ]
+
+TASK [Count VMs in vm_info.virtual_machines] ***********************************
+ok: [hostname.xyz.com  ]
+
+TASK [Assert less than two VMs in list] ****************************************
+ok: [hostname.xyz.com  ] => {
+"changed": false,
+"msg": "All assertions passed"
+}
+
+TASK [Rename the VM] ***********************************************************
+changed: [hostname.xyz.com   -> 127.0.0.1]
+
+TASK [set start_connected false for all nics on VM] ****************************
+changed: [hostname.xyz.com   -> 127.0.0.1] => (item=00:50:56:ab:c5:04)
+
+TASK [Power off VM if running] *************************************************
+ok: [hostname.xyz.com   -> 127.0.0.1]
+
+TASK [Retrieve CloudView token] ************************************************
+ok: [hostname.xyz.com   -> 127.0.0.1]
+
+TASK [Check CloudGateway token response] ***************************************
+ok: [hostname.xyz.com  ]
+
+TASK [Extract CloudView token from response] ***********************************
+ok: [hostname.xyz.com  ]
+
+TASK [Verify that vmware-guest-tools are not installed] ************************
+ok: [hostname.xyz.com  ]
+
+TASK [Install qemu-guest-agent] ************************************************
+changed: [hostname.xyz.com  ]
+
+TASK [Check if qemu-ga is installed] *******************************************
+changed: [hostname.xyz.com  ]
+
+TASK [Enable and start qemu-guest-agent] ***************************************
+ok: [hostname.xyz.com  ]
+
+TASK [Extract data from ACM lookup response] ***********************************
+ok: [hostname.xyz.com  ]
+
+TASK [Get ManagedCluster] ******************************************************
+ok: [hostname.xyz.com   -> 127.0.0.1]
+
+TASK [Check ManagedCluster response] *******************************************
+ok: [hostname.xyz.com  ] => {
+"changed": false,
+"msg": "All assertions passed"
+}
+
+TASK [Get OAuth redirect URI] **************************************************
+ok: [hostname.xyz.com  ]
+
+TASK [Extract hosting cluster name from OAuth redirect URL] ********************
+ok: [hostname.xyz.com  ]
+
+TASK [Extract availability zone from hosting cluster name] *********************
+ok: [hostname.xyz.com  ]
+
+TASK [Show extracted data] *****************************************************
+ok: [hostname.xyz.com  ] => {
+"msg": "hostingCluster: controlplane-clustername.xyz.com, hostedCluster: hosted-clustername.xyz.com, availabilityZone: B"
+}
+
+TASK [Update VM in CMDB] *******************************************************
+ok: [hostname.xyz.com   -> 127.0.0.1]
+
+TASK [Get backup status of VM in CMDB] *****************************************
+ok: [hostname.xyz.com   -> 127.0.0.1]
+
+TASK [Patch my name in the todo configmap] *************************************
+ok: [hostname.xyz.com   -> 127.0.0.1]
+
+PLAY RECAP *********************************************************************
+hostname.xyz.com   : ok=43 changed=4 unreachable=0 failed=0 skipped=2 rescued=0 ignored=1
