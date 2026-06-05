@@ -33,14 +33,14 @@ Only port 8080 is on the Service and Route. The API on 8000 is internal to the p
 | `skills-dir` | emptyDir | -- | init writes `/skills`, `adk-api` reads `/skills` | Skill directory |
 | `artifact-storage` | PVC (1Gi) | `adk-artifacts` | `adk-api` at `/app/.adk` | Saved report artifacts |
 
-**Secrets** (all optional):
+**Secrets**:
 
-| Secret | Env Var | Purpose |
-|---|---|---|
-| `quay-pull-secret` | imagePullSecrets | Pull container images from Quay |
-| `mtv-cluster-token` | `MTV_API_TOKEN` | Authenticate to remote MTV cluster |
-| `virt-cluster-token` | `VIRT_API_TOKEN` | Authenticate to remote OCP Virt cluster |
-| `aap-agent-token` | `AAP_TOKEN` | Authenticate to AAP Controller |
+| Secret | Env Var | Optional? | Purpose |
+|---|---|---|---|
+| `quay-pull-secret` | imagePullSecrets | No (required for image pull) | Pull container images from Quay |
+| `mtv-cluster-token` | `MTV_API_TOKEN` | Yes | Authenticate to remote MTV cluster |
+| `virt-cluster-token` | `VIRT_API_TOKEN` | Yes | Authenticate to remote OCP Virt cluster |
+| `aap-agent-token` | `AAP_TOKEN` | Yes | Authenticate to AAP Controller |
 
 <details>
 <summary>Mermaid source (editable)</summary>
@@ -148,7 +148,7 @@ The agent connects to up to 4 external systems, each with independent authentica
 | **MTV Cluster** | `MTV_API_URL` + `MTV_API_TOKEN` | Forklift `v1beta1` (providers, plans, migrations, networkmaps, storagemaps) + Inventory Route HTTP | `list_vmware_vms`, `get_migration_status`, `create_migration_plan` |
 | **Virt Cluster** | `VIRT_API_URL` + `VIRT_API_TOKEN` (falls back to MTV) | KubeVirt `v1` (VirtualMachines) + CoreV1 (pod logs) | `list_migrated_vms`, `get_vm_details`, `get_pod_logs` |
 | **AAP Controller** | `AAP_URL` + `AAP_TOKEN` | REST `/api/controller/v2/` (job_templates, jobs, stdout) | `list_job_templates`, `launch_job`, `get_job_status`, `get_job_output` |
-| **LLM Endpoint** | `OPENAI_API_BASE` + `OPENAI_API_KEY` | OpenAI-compatible `/v1` | All LlmAgent instances via LiteLlm |
+| **LLM Endpoint** | `OPENAI_API_BASE` + `OPENAI_API_KEY` (consumed by LiteLLM, not in agent Python code) | OpenAI-compatible `/v1` | All LlmAgent instances via LiteLlm |
 
 ### Token Resolution
 
@@ -237,7 +237,7 @@ Which tools and skills are available to each agent in the pipeline.
 | ValidationAgent | | Y | | Y | | | | Y | Y | Y | | Y |
 | ReporterAgent | | | | | | | | | | | Y | Y |
 
-The **SkillToolset** gives access to all 11 skills via `list_skills`, `load_skill`, and `load_skill_resource`.
+The **SkillToolset** gives access to all 11 skills via `list_skills`, `load_skill`, and `load_skill_resource`. Note: SkillToolset is only included when skills are discovered at startup (`skills = _discover_skills(SKILLS_DIR)` in `agent.py` line 105). If `/skills` is empty or missing, agents marked Y for SkillToolset will have no skill tools at runtime.
 
 ---
 
@@ -256,7 +256,7 @@ Each phase writes its output to a session state key. Subsequent phases read from
 | 1 | DiscoveryAgent | `vm_inventory` | (user request) |
 | 2 | AssessmentAgent | `readiness_verdict` | `vm_inventory` |
 | 3 | MigrationAgent | `migration_id` | `readiness_verdict`, `vm_inventory` |
-| 4 | MigrationMonitor | `migration_status` | `migration_id` |
+| 4 | StatusPoller (inside MigrationMonitor) | `migration_status` | `migration_id` |
 | 5 | ValidationAgent | `validation_result` | `migration_status`, `vm_inventory` |
 | 6 | ReporterAgent | `final_report` | all prior keys |
 

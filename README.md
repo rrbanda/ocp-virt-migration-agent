@@ -148,7 +148,7 @@ Pull these images into your mirror registry before deployment:
 |---|---|
 | `quay.io/rbrhssa/adk-web:oidc` | Angular UI + nginx reverse proxy |
 | `quay.io/rbrhssa/adk-agent:migration` | Agent with all skills and sample data baked in |
-| `docker.io/library/busybox:latest` | Init container for skill directory setup |
+| `busybox` (as referenced in `openshift.yaml`; resolve to `docker.io/library/busybox` for mirroring) | Init container for skill directory setup |
 
 If rebuilding the agent image locally, you also need `python:3.11-slim` as the base.
 
