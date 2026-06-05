@@ -26,12 +26,12 @@ Only port 8080 is on the Service and Route. The API on 8000 is internal to the p
 
 **Volumes**:
 
-| Volume | Type | Mounted To | Purpose |
-|---|---|---|---|
-| `adk-web-config` | ConfigMap | nginx at `runtime-config.json` | UI config (backend URL, OIDC) |
-| `adk-skills` | ConfigMap | init at `/skills-raw` | Agent instruction override |
-| `skills-dir` | emptyDir | init writes, `adk-api` reads at `/skills` | Skill directory |
-| `adk-artifacts` | PVC (1Gi) | `adk-api` at `/app/.adk` | Saved report artifacts |
+| Volume Name | Type | Source | Mounted To | Purpose |
+|---|---|---|---|---|
+| `web-config` | ConfigMap | `adk-web-config` | nginx at `runtime-config.json` | UI config (backend URL, OIDC) |
+| `skills-raw` | ConfigMap | `adk-skills` | init at `/skills-raw` | Agent instruction override |
+| `skills-dir` | emptyDir | -- | init writes `/skills`, `adk-api` reads `/skills` | Skill directory |
+| `artifact-storage` | PVC (1Gi) | `adk-artifacts` | `adk-api` at `/app/.adk` | Saved report artifacts |
 
 **Secrets** (all optional):
 
@@ -64,10 +64,10 @@ graph LR
         end
 
         subgraph volumes [Volumes]
-            CM_Config["ConfigMap adk-web-config"]
-            CM_Skills["ConfigMap adk-skills"]
-            PVC["PVC adk-artifacts 1Gi"]
-            EmptyDir["emptyDir skills-dir"]
+            CM_Config["web-config: ConfigMap adk-web-config"]
+            CM_Skills["skills-raw: ConfigMap adk-skills"]
+            PVC["artifact-storage: PVC adk-artifacts 1Gi"]
+            EmptyDir["skills-dir: emptyDir"]
         end
 
         CM_Skills --> Init
@@ -150,15 +150,21 @@ The agent connects to up to 4 external systems, each with independent authentica
 | **AAP Controller** | `AAP_URL` + `AAP_TOKEN` | REST `/api/controller/v2/` (job_templates, jobs, stdout) | `list_job_templates`, `launch_job`, `get_job_status`, `get_job_output` |
 | **LLM Endpoint** | `OPENAI_API_BASE` + `OPENAI_API_KEY` | OpenAI-compatible `/v1` | All LlmAgent instances via LiteLlm |
 
-### Token Resolution Chain
+### Token Resolution
 
-For MTV and Virt cluster tokens, `cluster_clients.py` uses a 3-step resolution:
+**MTV/Virt K8s API tokens** (`_read_token` in `cluster_clients.py`):
 
 1. Read env var (e.g., `MTV_API_TOKEN`)
-2. If the value is a file path (`os.path.isfile`), read the file contents
-3. If neither, fall back to in-cluster service account token at `/var/run/secrets/kubernetes.io/serviceaccount/token`
+2. If the value is a file path (`os.path.isfile`), read the file contents instead
+3. If no URL+token pair is configured, fall back to `load_incluster_config()` or `load_kube_config()`
 
-AAP tokens are read directly from the `AAP_TOKEN` env var (no file indirection).
+**Forklift Inventory HTTP token** (`_get_inventory_token`):
+
+1. Try `MTV_INVENTORY_TOKEN` env var (with file-path indirection)
+2. Else try `MTV_API_TOKEN` env var (with file-path indirection)
+3. Else fall back to in-cluster SA token at `/var/run/secrets/kubernetes.io/serviceaccount/token`
+
+**AAP tokens** are read directly from the `AAP_TOKEN` env var (no file indirection, no SA fallback).
 
 ### TLS Verification
 
