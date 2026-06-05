@@ -81,33 +81,106 @@ Skills include bundled sample data from real customer playbook output for offlin
 | `quay.io/rbrhssa/adk-web:oidc` | ADK Web UI with OIDC auth support (nginx) |
 | `quay.io/rbrhssa/adk-agent:migration` | Migration agent with all skills and sample data |
 
-## Quick Start
+## Deployment Guide
+
+### Step 1: Create namespace
 
 ```bash
-# 1. Create namespace
 oc new-project adk-web
+```
 
-# 2. Create image pull secret (if images are private)
+### Step 2: Create image pull secret
+
+Required if pulling from a private Quay registry:
+
+```bash
 oc create secret docker-registry quay-pull-secret \
   --docker-server=quay.io \
   --docker-username=YOUR_QUAY_USER \
-  --docker-password=YOUR_QUAY_PASS
-
-# 3. Create cluster access tokens (for multi-cluster)
-oc create secret generic mtv-cluster-token --from-literal=token=<MTV_TOKEN> -n adk-web
-oc create secret generic virt-cluster-token --from-literal=token=<VIRT_TOKEN> -n adk-web
-oc create secret generic aap-agent-token --from-literal=token=<AAP_TOKEN> -n adk-web
-
-# 4. Edit deploy/openshift.yaml -- replace placeholders:
-#    KEYCLOAK_HOST, REALM_NAME, CLIENT_ID
-#    LLM_API_BASE, ADK_MODEL_NAME
-
-# 5. Deploy
-oc apply -f deploy/openshift.yaml
-
-# 6. Get the URL
-oc get route adk-web -o jsonpath='{.spec.host}'
+  --docker-password=YOUR_QUAY_PASS \
+  -n adk-web
 ```
+
+### Step 3: Edit `deploy/openshift.yaml`
+
+Replace these placeholders with your actual values:
+
+| Placeholder | Where | Example Value |
+|---|---|---|
+| `LLM_API_BASE` | `OPENAI_API_BASE` env var (value becomes `https://YOUR_HOST/v1`) | `llamastack.example.com` |
+| `ADK_MODEL_NAME` | `ADK_MODEL` env var | `openai/meta-llama/Llama-3.1-70B-Instruct` |
+| `KEYCLOAK_HOST` | ConfigMap `adk-web-config` | `keycloak.example.com` (or see anonymous mode below) |
+| `REALM_NAME` | ConfigMap `adk-web-config` | `my-realm` |
+| `CLIENT_ID` | ConfigMap `adk-web-config` | `adk-web` |
+| `mtv-user1` | `DEFAULT_MTV_NAMESPACE` | Your MTV provider namespace |
+| `vmimported-user1` | `DEFAULT_VIRT_NAMESPACE` | Target namespace for migrated VMs |
+
+Also set `TARGET_STORAGE_CLASS` to your cluster's storage class (e.g., `ocs-storagecluster-ceph-rbd`).
+
+**Anonymous mode (no Keycloak):** Replace the `adk-web-config` ConfigMap data with:
+
+```json
+{
+  "backendUrl": "/api"
+}
+```
+
+### Step 4: Create Secrets (optional, per deployment mode)
+
+**Single-cluster** (agent runs on the same cluster as MTV and OCP Virt):
+No token Secrets needed -- the agent uses in-cluster service account auth. Skip this step.
+
+**Multi-cluster** (agent, MTV, and OCP Virt on separate clusters):
+
+```bash
+# Get a token from the MTV cluster
+oc --context=<MTV_CONTEXT> create token <SA_NAME> --duration=720h
+oc create secret generic mtv-cluster-token --from-literal=token=<TOKEN> -n adk-web
+
+# Get a token from the OCP Virt cluster (skip if same as MTV)
+oc --context=<VIRT_CONTEXT> create token <SA_NAME> --duration=720h
+oc create secret generic virt-cluster-token --from-literal=token=<TOKEN> -n adk-web
+```
+
+For multi-cluster, also set `MTV_API_URL` and `VIRT_API_URL` in the YAML to the remote API server URLs (e.g., `https://api.mtv-cluster.example.com:6443`).
+
+**AAP integration** (optional):
+
+```bash
+oc create secret generic aap-agent-token --from-literal=token=<AAP_TOKEN> -n adk-web
+```
+
+Also set `AAP_URL` (e.g., `https://aap.example.com`) and optionally `PRE_MIGRATION_TEMPLATE_ID` / `POST_MIGRATION_TEMPLATE_ID` in the YAML.
+
+### Step 5: Deploy
+
+```bash
+oc apply -f deploy/openshift.yaml -n adk-web
+```
+
+### Step 6: Verify
+
+```bash
+# Wait for pod to be ready (2/2 containers)
+oc get pods -l app=adk-web -n adk-web -w
+
+# Check API is responding
+ROUTE=$(oc get route adk-web -n adk-web -o jsonpath='{.spec.host}')
+curl -sk "https://${ROUTE}/api/version"
+# Expected: {"version":"1.34.3","language":"python","language_version":"3.11.15"}
+
+# Test VMware connectivity (if MTV is configured)
+echo "https://${ROUTE}"
+# Open in browser to access the chat UI
+```
+
+### Important: Skills Loading
+
+The agent image has all 11 skills baked in at `/skills/`. However, the OpenShift deployment mounts an `emptyDir` volume at `/skills` (populated by the init container from the `adk-skills` ConfigMap). This means:
+
+- **With the default ConfigMap**: Only `agent-instruction.md` is written to `/skills`. The 11 skill subdirectories from the image are hidden by the emptyDir mount. The agent will run but without skills.
+- **To use baked-in skills**: Remove the `skills-dir` volume mount from the `adk-api` container and the `skills-raw` / `skills-dir` volumes from the pod spec. The agent will use skills directly from the image.
+- **To use ConfigMap skills**: Add skill entries to the `adk-skills` ConfigMap using the `--` path separator convention (see Skills Guide below).
 
 ## Configuration
 
