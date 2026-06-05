@@ -14,16 +14,11 @@ An intelligent migration coordinator that can:
 
 ## Architecture
 
-```
-Browser --> OIDC (Keycloak) --> ADK Web UI (nginx) --> ADK API Server --> LLM
-                                                            |
-                                              +-------------+-------------+
-                                              |             |             |
-                                        MTV/OCP Virt    AAP/Ansible   Skills
-                                        (VMware VMs,    (Pre/Post     (10 analysis
-                                         migrations,    migration      skills with
-                                         pod logs)      playbooks)     reference data)
-```
+![Agent Pipeline](docs/images/02-agent-pipeline.png)
+
+![Multi-Cluster Connectivity](docs/images/03-multi-cluster.png)
+
+For detailed architecture documentation with 5 diagrams (deployment, agent pipeline, multi-cluster connectivity, tool/skill matrix, and data flow), see **[docs/architecture.md](docs/architecture.md)**.
 
 ### Multi-Agent Pipeline (AGENT_MODE=pipeline)
 
@@ -140,6 +135,76 @@ See [docs/test-prompts.md](docs/test-prompts.md) for categorized test prompts co
 2. Migration monitoring and troubleshooting
 3. Post-migration validation
 4. Migration planning and capacity insights
+
+## Disconnected / Air-Gapped Deployment
+
+This agent can run in a fully disconnected environment with no external internet access at runtime.
+
+### Container Images to Mirror
+
+Pull these images into your mirror registry before deployment:
+
+| Image | Purpose |
+|---|---|
+| `quay.io/rbrhssa/adk-web:oidc` | Angular UI + nginx reverse proxy |
+| `quay.io/rbrhssa/adk-agent:migration` | Agent with all skills and sample data baked in |
+| `docker.io/library/busybox:latest` | Init container for skill directory setup |
+
+If rebuilding the agent image locally, you also need `python:3.11-slim` as the base.
+
+### Python Packages (for Local Builds Only)
+
+Pre-download all packages and their transitive dependencies:
+
+```bash
+pip download -d ./wheels \
+  "google-adk>=1.0.0,<2.0.0" litellm python-dotenv \
+  requests kubernetes tenacity
+
+# Transfer ./wheels to the disconnected build host, then:
+pip install --no-cache-dir --no-index --find-links=./wheels \
+  "google-adk>=1.0.0,<2.0.0" litellm python-dotenv \
+  requests kubernetes tenacity
+```
+
+### LLM Requirement
+
+The agent requires an **OpenAI-compatible LLM endpoint** reachable from the cluster. No external API calls are needed if you host the model locally:
+
+| Option | Notes |
+|---|---|
+| **Ollama** | `OPENAI_API_BASE=http://ollama-svc:11434/v1` |
+| **vLLM** | `OPENAI_API_BASE=http://vllm-svc:8000/v1` |
+| **TGI** (Text Generation Inference) | `OPENAI_API_BASE=http://tgi-svc:8080/v1` |
+| **Llama Stack** on OpenShift AI | `OPENAI_API_BASE=https://llamastack-svc/v1` |
+
+Set `OPENAI_API_KEY=not-needed` for local models that don't require authentication.
+
+### Cluster Prerequisites
+
+| Requirement | Minimum Version | Purpose |
+|---|---|---|
+| **OpenShift** | 4.14+ | Container platform |
+| **OCP Virtualization** | 4.14+ | Target platform for migrated VMs |
+| **Migration Toolkit for Virtualization (MTV)** | 2.5+ | VMware-to-OCP Virt migration engine |
+| **VMware vSphere** | 7.0+ | Source hypervisor (configured as MTV provider) |
+| **Storage** | ODF or equivalent | StorageClass for VM disk PVCs |
+| **Keycloak** (optional) | -- | OIDC authentication for the UI |
+| **Ansible Automation Platform** (optional) | 2.4+ | Pre/post migration playbook execution |
+
+### Network Requirements (Disconnected)
+
+The agent pod requires network access only to internal services:
+
+| Destination | Port | Purpose |
+|---|---|---|
+| MTV cluster API server | 6443 | Forklift provider/plan/migration CRs |
+| OCP Virt cluster API server | 6443 | KubeVirt VM CRs, pod logs |
+| LLM endpoint | varies | Model inference |
+| AAP Controller (if used) | 443 | Ansible job execution |
+| Mirror registry | 443/5000 | Image pulls |
+
+No external internet access is required at runtime. All skills and sample data are baked into the agent container image.
 
 ## Building Images
 
