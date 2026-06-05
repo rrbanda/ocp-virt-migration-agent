@@ -19,7 +19,7 @@ except ImportError:
     requests = None
     urllib3 = None
 
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def _http_get(url: str, headers: dict, timeout: int = 30) -> requests.Response:
     resp.raise_for_status()
     return resp
 
-from .cluster_clients import (
+from .cluster_clients import (  # noqa: E402
     K8S_AVAILABLE,
     ApiException,
     DEFAULT_MTV_NAMESPACE,
@@ -61,6 +61,42 @@ from .cluster_clients import (
     virt_core_api,
     virt_custom_api,
 )
+
+_K8S_RETRYABLE_STATUSES = {403, 429, 500, 502, 503, 504}
+
+
+def _is_retryable_k8s(exc: BaseException) -> bool:
+    return isinstance(exc, ApiException) and exc.status in _K8S_RETRYABLE_STATUSES
+
+
+_k8s_retry = retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception(_is_retryable_k8s),
+    reraise=True,
+    before_sleep=lambda rs: log.warning(
+        "K8s API call failed (status %s), retrying attempt %d...",
+        getattr(rs.outcome.exception(), "status", "?"), rs.attempt_number,
+    ),
+)
+
+
+@_k8s_retry
+def _k8s_list(api, **kwargs):
+    """list_namespaced_custom_object with retry on transient errors."""
+    return api.list_namespaced_custom_object(**kwargs)
+
+
+@_k8s_retry
+def _k8s_get(api, **kwargs):
+    """get_namespaced_custom_object with retry on transient errors."""
+    return api.get_namespaced_custom_object(**kwargs)
+
+
+@_k8s_retry
+def _k8s_create(api, **kwargs):
+    """create_namespaced_custom_object with retry on transient errors (except 409)."""
+    return api.create_namespaced_custom_object(**kwargs)
 
 
 def _resolve_inventory(mtv_api, provider_uid: str) -> tuple[str, str]:
@@ -77,7 +113,7 @@ def _resolve_inventory(mtv_api, provider_uid: str) -> tuple[str, str]:
     if MTV_INVENTORY_URL:
         return MTV_INVENTORY_URL.rstrip("/"), token
 
-    inv_route = mtv_api.get_namespaced_custom_object(
+    inv_route = _k8s_get(mtv_api,
         group="route.openshift.io", version="v1",
         namespace=MTV_OPERATOR_NAMESPACE, plural="routes",
         name=MTV_INVENTORY_ROUTE_NAME,
@@ -105,7 +141,7 @@ def list_vmware_vms(namespace: str = "") -> dict:
 
     try:
         api = mtv_custom_api()
-        providers = api.list_namespaced_custom_object(
+        providers = _k8s_list(api,
             group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
             namespace=namespace, plural="providers",
         )
@@ -169,7 +205,7 @@ def list_migrated_vms(namespace: str = "") -> dict:
 
     try:
         api = virt_custom_api()
-        vms = api.list_namespaced_custom_object(
+        vms = _k8s_list(api,
             group=KUBEVIRT_GROUP, version=KUBEVIRT_VERSION,
             namespace=namespace, plural="virtualmachines",
         )
@@ -209,7 +245,7 @@ def get_vm_details(namespace: str, vm_name: str) -> dict:
 
     try:
         api = virt_custom_api()
-        vm = api.get_namespaced_custom_object(
+        vm = _k8s_get(api,
             group=KUBEVIRT_GROUP, version=KUBEVIRT_VERSION,
             namespace=namespace, plural="virtualmachines", name=vm_name,
         )
@@ -256,11 +292,11 @@ def get_migration_status(namespace: str = "") -> dict:
 
     try:
         api = mtv_custom_api()
-        plans = api.list_namespaced_custom_object(
+        plans = _k8s_list(api,
             group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
             namespace=namespace, plural="plans",
         )
-        migrations = api.list_namespaced_custom_object(
+        migrations = _k8s_list(api,
             group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
             namespace=namespace, plural="migrations",
         )
@@ -341,7 +377,7 @@ def create_migration_plan(
 
         log.info("Creating migration plan for VM '%s' in namespace '%s'", vm_name, namespace)
 
-        providers = api.list_namespaced_custom_object(
+        providers = _k8s_list(api,
             group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
             namespace=namespace, plural="providers",
         )
@@ -401,7 +437,7 @@ def create_migration_plan(
             },
         }
         try:
-            api.create_namespaced_custom_object(
+            _k8s_create(api,
                 group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
                 namespace=namespace, plural="networkmaps", body=nmap,
             )
@@ -438,7 +474,7 @@ def create_migration_plan(
             },
         }
         try:
-            api.create_namespaced_custom_object(
+            _k8s_create(api,
                 group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
                 namespace=namespace, plural="storagemaps", body=smap,
             )
@@ -470,7 +506,7 @@ def create_migration_plan(
             "spec": plan_spec,
         }
         try:
-            api.create_namespaced_custom_object(
+            _k8s_create(api,
                 group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
                 namespace=namespace, plural="plans", body=plan,
             )
@@ -495,7 +531,7 @@ def create_migration_plan(
             },
         }
         try:
-            api.create_namespaced_custom_object(
+            _k8s_create(api,
                 group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
                 namespace=namespace, plural="migrations", body=migration,
             )

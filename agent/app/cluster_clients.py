@@ -5,8 +5,9 @@ OCP Virtualization target cluster. When explicit URL + token env vars are
 set, the client connects to a remote cluster. Otherwise it falls back to
 in-cluster service account auth or local kubeconfig (backward-compatible).
 
-Clients are lazily created and refreshed on each call to handle OCP token
-expiry (tokens from ``oc login`` expire after 24 h).
+Clients are cached with a TTL to avoid connection pool leaks while still
+handling token rotation. The in-cluster config's built-in refresh hook
+re-reads the SA token from disk every 60 seconds.
 
 Configuration via environment variables:
 
@@ -34,6 +35,8 @@ Configuration via environment variables:
 
 import logging
 import os
+import threading
+import time
 
 try:
     from kubernetes import client, config
@@ -73,8 +76,12 @@ def _read_token(env_var: str) -> str:
     """Read a bearer token from an env var, supporting file-path indirection."""
     val = os.environ.get(env_var, "")
     if val and os.path.isfile(val):
-        with open(val) as f:
-            return f.read().strip()
+        try:
+            with open(val) as f:
+                return f.read().strip()
+        except OSError as e:
+            log.warning("Failed to read token file %s for %s: %s", val, env_var, e)
+            return ""
     return val
 
 
@@ -82,14 +89,20 @@ def _read_sa_token() -> str:
     """Read the in-cluster service account token (re-read each call)."""
     sa_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
     if os.path.exists(sa_path):
-        with open(sa_path) as f:
-            return f.read().strip()
+        try:
+            with open(sa_path) as f:
+                return f.read().strip()
+        except OSError as e:
+            log.warning("Failed to read SA token: %s", e)
     return ""
 
 
 # ---------------------------------------------------------------------------
-# Client builder (fresh client each call — handles token refresh)
+# Client cache (avoids connection pool leaks from per-call client creation)
 # ---------------------------------------------------------------------------
+_CLIENT_TTL = 300  # seconds (5 minutes)
+_client_cache: dict[str, tuple["client.ApiClient", float]] = {}
+_client_lock = threading.Lock()
 _incluster_loaded = False
 
 
@@ -100,7 +113,7 @@ def _ensure_default_config():
         return
     try:
         config.load_incluster_config()
-        log.info("Loaded in-cluster Kubernetes config")
+        log.info("Loaded in-cluster Kubernetes config (SA token auto-refresh enabled)")
     except config.ConfigException:
         try:
             config.load_kube_config()
@@ -112,8 +125,37 @@ def _ensure_default_config():
 
 
 def _build_client(api_url: str, token: str, ca_path: str) -> "client.ApiClient | None":
+    """Build or return a cached Kubernetes ApiClient.
+
+    Clients are cached by (api_url, ca_path) key with a TTL. Stale clients
+    are closed before replacement to avoid urllib3 connection pool leaks.
+    """
     if not K8S_AVAILABLE:
         return None
+
+    cache_key = f"{api_url}|{ca_path}" if api_url else "default"
+
+    with _client_lock:
+        cached = _client_cache.get(cache_key)
+        if cached:
+            cached_client, created_at = cached
+            if (time.monotonic() - created_at) < _CLIENT_TTL:
+                log.debug("Reusing cached K8s client for %s", cache_key)
+                return cached_client
+            log.info("K8s client cache expired for %s, rebuilding", cache_key)
+            try:
+                cached_client.close()
+            except Exception:
+                pass
+
+        new_client = _create_client(api_url, token, ca_path)
+        if new_client:
+            _client_cache[cache_key] = (new_client, time.monotonic())
+        return new_client
+
+
+def _create_client(api_url: str, token: str, ca_path: str) -> "client.ApiClient | None":
+    """Create a new Kubernetes ApiClient (internal, called by _build_client)."""
     try:
         if api_url and token:
             conf = client.Configuration()
@@ -122,10 +164,12 @@ def _build_client(api_url: str, token: str, ca_path: str) -> "client.ApiClient |
             conf.verify_ssl = bool(ca_path)
             if ca_path and os.path.isfile(ca_path):
                 conf.ssl_ca_cert = ca_path
+            log.info("Built K8s client for remote cluster %s (TLS verify=%s)", api_url, bool(ca_path))
             return client.ApiClient(configuration=conf)
         if api_url and not token:
             log.warning("API URL '%s' configured but no token provided; falling back to default config", api_url)
         _ensure_default_config()
+        log.info("Built K8s client using default config (in-cluster / kubeconfig)")
         return client.ApiClient()
     except Exception as e:
         log.error("Failed to build Kubernetes client (url=%s): %s", api_url or "default", e)
@@ -133,7 +177,7 @@ def _build_client(api_url: str, token: str, ca_path: str) -> "client.ApiClient |
 
 
 # ---------------------------------------------------------------------------
-# Lazy API handle factories (fresh token on each call)
+# Lazy API handle factories (cached client + fresh token on each call)
 # ---------------------------------------------------------------------------
 def mtv_custom_api():
     """CustomObjectsApi targeting the MTV management cluster."""
@@ -174,19 +218,22 @@ def _get_inventory_token() -> str:
 # ---------------------------------------------------------------------------
 # Startup log
 # ---------------------------------------------------------------------------
-if MTV_API_URL:
-    log.info("MTV cluster: %s", MTV_API_URL)
-else:
-    log.info("MTV cluster: in-cluster / kubeconfig (default)")
+if K8S_AVAILABLE:
+    if MTV_API_URL:
+        log.info("MTV cluster: %s", MTV_API_URL)
+    else:
+        log.info("MTV cluster: in-cluster / kubeconfig (default)")
 
-if VIRT_API_URL:
-    log.info("Virt cluster: %s", VIRT_API_URL)
-elif MTV_API_URL:
-    log.info("Virt cluster: same as MTV cluster")
-else:
-    log.info("Virt cluster: in-cluster / kubeconfig (default)")
+    if VIRT_API_URL:
+        log.info("Virt cluster: %s", VIRT_API_URL)
+    elif MTV_API_URL:
+        log.info("Virt cluster: same as MTV cluster")
+    else:
+        log.info("Virt cluster: in-cluster / kubeconfig (default)")
 
-if MTV_INVENTORY_URL:
-    log.info("MTV inventory URL: %s (direct)", MTV_INVENTORY_URL)
+    if MTV_INVENTORY_URL:
+        log.info("MTV inventory URL: %s (direct)", MTV_INVENTORY_URL)
+    else:
+        log.info("MTV inventory URL: auto-discover from Route CR")
 else:
-    log.info("MTV inventory URL: auto-discover from Route CR")
+    log.warning("kubernetes Python client not installed; MTV/OCP tools disabled")
