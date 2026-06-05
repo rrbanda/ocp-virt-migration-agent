@@ -100,27 +100,36 @@ def _ensure_default_config():
         return
     try:
         config.load_incluster_config()
+        log.info("Loaded in-cluster Kubernetes config")
     except config.ConfigException:
         try:
             config.load_kube_config()
+            log.info("Loaded kubeconfig from default location")
         except config.ConfigException:
-            pass
+            log.warning("No Kubernetes config available (neither in-cluster nor kubeconfig). "
+                        "MTV/OCP tools will fail unless explicit API URLs and tokens are configured.")
     _incluster_loaded = True
 
 
 def _build_client(api_url: str, token: str, ca_path: str) -> "client.ApiClient | None":
     if not K8S_AVAILABLE:
         return None
-    if api_url and token:
-        conf = client.Configuration()
-        conf.host = api_url.rstrip("/")
-        conf.api_key = {"authorization": f"Bearer {token}"}
-        conf.verify_ssl = bool(ca_path)
-        if ca_path:
-            conf.ssl_ca_cert = ca_path
-        return client.ApiClient(configuration=conf)
-    _ensure_default_config()
-    return client.ApiClient()
+    try:
+        if api_url and token:
+            conf = client.Configuration()
+            conf.host = api_url.rstrip("/")
+            conf.api_key = {"authorization": f"Bearer {token}"}
+            conf.verify_ssl = bool(ca_path)
+            if ca_path and os.path.isfile(ca_path):
+                conf.ssl_ca_cert = ca_path
+            return client.ApiClient(configuration=conf)
+        if api_url and not token:
+            log.warning("API URL '%s' configured but no token provided; falling back to default config", api_url)
+        _ensure_default_config()
+        return client.ApiClient()
+    except Exception as e:
+        log.error("Failed to build Kubernetes client (url=%s): %s", api_url or "default", e)
+        return None
 
 
 # ---------------------------------------------------------------------------

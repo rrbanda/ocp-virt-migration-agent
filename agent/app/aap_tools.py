@@ -27,12 +27,21 @@ log = logging.getLogger(__name__)
 AAP_URL = os.environ.get("AAP_URL", "")
 AAP_TOKEN = os.environ.get("AAP_TOKEN", "")
 AAP_API_PREFIX = os.environ.get("AAP_API_PREFIX", "/api/controller/v2")
-AAP_CA_BUNDLE = os.environ.get("AAP_CA_BUNDLE", "")
+AAP_CA_BUNDLE = os.environ.get("AAP_CA_BUNDLE", "").strip()
 
 PRE_MIGRATION_TEMPLATE_ID = os.environ.get("PRE_MIGRATION_TEMPLATE_ID", "")
 POST_MIGRATION_TEMPLATE_ID = os.environ.get("POST_MIGRATION_TEMPLATE_ID", "")
 
-_VERIFY = AAP_CA_BUNDLE if AAP_CA_BUNDLE else False
+AAP_MAX_OUTPUT_BYTES = int(os.environ.get("AAP_MAX_OUTPUT_BYTES", str(512 * 1024)))
+
+if AAP_CA_BUNDLE.lower() == "true":
+    _VERIFY = True
+elif AAP_CA_BUNDLE and os.path.isfile(AAP_CA_BUNDLE):
+    _VERIFY = AAP_CA_BUNDLE
+else:
+    _VERIFY = False
+
+_TERMINAL_STATUSES = ("successful", "failed", "error", "canceled")
 _RETRYABLE = (requests.exceptions.ConnectionError, requests.exceptions.Timeout)
 
 
@@ -175,7 +184,7 @@ def get_job_status(job_id: int) -> dict:
             "elapsed": data.get("elapsed"),
             "failed": data.get("failed", False),
             "job_template_name": data.get("name", ""),
-            "is_finished": data["status"] in ("successful", "failed", "error", "canceled"),
+            "is_finished": data["status"] in _TERMINAL_STATUSES,
         }
     except requests.exceptions.HTTPError as e:
         return {"error": f"Failed to get job status: {e.response.status_code}"}
@@ -205,7 +214,7 @@ def get_job_output(job_id: int) -> dict:
     try:
         job_data = _get(_api(f"/jobs/{job_id}/")).json()
 
-        if job_data["status"] not in ("successful", "failed", "error", "canceled"):
+        if job_data["status"] not in _TERMINAL_STATUSES:
             return {
                 "error": f"Job {job_id} is still {job_data['status']}. Wait for it to finish.",
                 "status": job_data["status"],
@@ -213,12 +222,24 @@ def get_job_output(job_id: int) -> dict:
 
         output_resp = _get(_api(f"/jobs/{job_id}/stdout/?format=txt"), timeout=60)
 
-        return {
+        output_text = output_resp.text
+        truncated = False
+        if len(output_text) > AAP_MAX_OUTPUT_BYTES:
+            output_text = output_text[:AAP_MAX_OUTPUT_BYTES]
+            truncated = True
+            log.warning("Job %s output truncated from %d to %d bytes",
+                        job_id, len(output_resp.text), AAP_MAX_OUTPUT_BYTES)
+
+        result = {
             "job_id": job_id,
             "status": job_data["status"],
-            "output": output_resp.text,
-            "output_length": len(output_resp.text),
+            "output": output_text,
+            "output_length": len(output_text),
         }
+        if truncated:
+            result["truncated"] = True
+            result["original_length"] = len(output_resp.text)
+        return result
     except requests.exceptions.HTTPError as e:
         return {"error": f"Failed to get job output: {e.response.status_code}"}
     except Exception as e:

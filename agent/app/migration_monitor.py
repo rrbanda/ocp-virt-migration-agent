@@ -9,6 +9,7 @@ Configuration via environment variables:
 """
 
 import asyncio
+import logging
 import os
 from typing import AsyncGenerator
 
@@ -16,9 +17,17 @@ from google.adk.agents import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event, EventActions
 
-MONITOR_POLL_INTERVAL = int(os.environ.get("MONITOR_POLL_INTERVAL", "15"))
+log = logging.getLogger(__name__)
 
-_TERMINAL_KEYWORDS = ("Completed", "Failed", "Succeeded", "Error", "Canceled")
+try:
+    MONITOR_POLL_INTERVAL = max(1, int(os.environ.get("MONITOR_POLL_INTERVAL", "15")))
+except (ValueError, TypeError):
+    MONITOR_POLL_INTERVAL = 15
+    log.warning("Invalid MONITOR_POLL_INTERVAL, using default: %d", MONITOR_POLL_INTERVAL)
+
+_TERMINAL_KEYWORDS = frozenset({
+    "Completed", "Failed", "Succeeded", "Error", "Canceled", "Cancelled",
+})
 
 
 class MigrationStatusChecker(BaseAgent):
@@ -27,10 +36,15 @@ class MigrationStatusChecker(BaseAgent):
     async def _run_async_impl(
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
-        status = str(ctx.session.state.get("migration_status", ""))
+        state = getattr(ctx.session, "state", None) or {}
+        status = str(state.get("migration_status", ""))
         is_done = any(kw in status for kw in _TERMINAL_KEYWORDS)
 
         if not is_done:
             await asyncio.sleep(MONITOR_POLL_INTERVAL)
 
-        yield Event(author=self.name, actions=EventActions(escalate=is_done))
+        yield Event(
+            invocation_id=ctx.invocation_id,
+            author=self.name,
+            actions=EventActions(escalate=is_done),
+        )

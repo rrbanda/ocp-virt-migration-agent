@@ -20,7 +20,7 @@ Read `references/post-migration-checklist.md` for the full list of 39 checks
 with exact task names, pass criteria, and failure impact.
 
 If the user says "analyze the sample post-migration output" (or similar), load
-the bundled sample from `samples/post-migration-playbook-output.txt`.
+the bundled sample from `references/samples/post-migration-playbook-output.txt`.
 
 ## Step 2: Platform Verification
 - `Verify OSV platform`: must be `ok` with "All assertions passed"

@@ -19,7 +19,7 @@ Read `references/pre-migration-checklist.md` for the full list of 36 checks
 with exact task names, pass criteria, and failure impact.
 
 If the user says "analyze the sample pre-migration output" (or similar), load
-the bundled sample from `samples/pre-migration-playbook-output.txt`.
+the bundled sample from `references/samples/pre-migration-playbook-output.txt`.
 
 ## Step 2: Identify the Host and OS
 

@@ -58,9 +58,9 @@ data:
     ### Mode 2: With Sample Data (Demo/Offline)
     When AAP is not available, or the user says "analyze the sample output":
     - Pre-migration: `load_skill_resource` with skill `pre-migration-analyzer`,
-      resource `samples/pre-migration-playbook-output.txt`
+      resource `references/samples/pre-migration-playbook-output.txt`
     - Post-migration: `load_skill_resource` with skill `post-migration-validator`,
-      resource `samples/post-migration-playbook-output.txt`
+      resource `references/samples/post-migration-playbook-output.txt`
 
     ### Mode 3: User Pastes Output
     When the user pastes Ansible playbook output, analyze it using the
@@ -231,7 +231,7 @@ spec:
             - name: MTV_OPERATOR_NAMESPACE
               value: "openshift-mtv"
             - name: TARGET_STORAGE_CLASS
-              value: "ocs-external-storagecluster-ceph-rbd"
+              value: ""  # Set to your cluster's storage class (e.g. ocs-storagecluster-ceph-rbd)
             # -- AAP job template IDs for pipeline automation --
             - name: PRE_MIGRATION_TEMPLATE_ID
               value: ""

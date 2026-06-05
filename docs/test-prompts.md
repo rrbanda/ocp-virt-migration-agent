@@ -12,7 +12,7 @@ expected behavior so testers know what to look for in the response.
 
 **Expected behavior:**
 - Agent loads `pre-migration-analyzer` skill
-- Agent loads `samples/pre-migration-playbook-output.txt` via `load_skill_resource`
+- Agent loads `references/samples/pre-migration-playbook-output.txt` via `load_skill_resource`
 - Agent loads `ansible-output-parser` skill to parse the output
 - Report includes:
   - VM profile: hostname.xyz.com, RedHat 8.10, 4 vCPU, 15729 MB RAM
@@ -88,7 +88,7 @@ expected behavior so testers know what to look for in the response.
 
 **Expected behavior:**
 - Agent loads `post-migration-validator` skill
-- Agent loads `samples/post-migration-playbook-output.txt` via `load_skill_resource`
+- Agent loads `references/samples/post-migration-playbook-output.txt` via `load_skill_resource`
 - Report includes:
   - Platform: OpenShift Virtualization confirmed
   - ACM: VM found, exactly one match
