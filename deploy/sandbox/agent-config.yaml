@@ -7,9 +7,9 @@ metadata:
 data:
   agents.yaml: |
     defaults:
-      model: "gemini/gemini-2.5-flash"
-      model_fast: ""
-      model_reasoning: ""
+      model: "openai/gemini-2.5-pro"
+      model_fast: "openai/gemini-2.5-flash"
+      model_reasoning: "openai/gemini-2.5-pro"
 
     agents:
       Coordinator:

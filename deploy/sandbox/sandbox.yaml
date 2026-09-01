@@ -55,7 +55,7 @@ spec:
         - name: AGENT_MODE
           value: pipeline
         - name: MIGRATION_DRY_RUN
-          value: "true"
+          value: "false"
         - name: MAX_LLM_CALLS
           value: "200"
         - name: PATH
@@ -64,15 +64,15 @@ spec:
           value: /sandbox
         # -- LLM --
         - name: ADK_MODEL
-          value: gemini/gemini-2.5-flash
+          value: openai/gemini-2.5-pro
         - name: ADK_MODEL_FAST
-          value: ""
+          value: openai/gemini-2.5-flash
         - name: ADK_MODEL_REASONING
-          value: ""
+          value: openai/gemini-2.5-pro
         - name: AGENT_CONFIG_PATH
           value: "/mnt/config/agents.yaml"
         - name: OPENAI_API_BASE
-          value: https://generativelanguage.googleapis.com/v1beta/openai
+          value: https://maas.apps.ocp.qn6c5.sandbox1388.opentlc.com/v1
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:
