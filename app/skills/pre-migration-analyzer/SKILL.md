@@ -140,10 +140,13 @@ output, evaluate using these criteria:
 |-------|------|---------|---------|
 | OS | RHEL 7/8/9, CentOS 7/8, Rocky 8/9, Ubuntu 20/22, Windows Server 2019/2022/2025 | Unsupported OS | -- |
 | Firmware | BIOS or UEFI (OCP Virt 4.14+) | -- | UEFI: verify boot order |
-| Disk | <500GB total, no RDM/shared | RDM or shared disks (unless using storage copy offload for RDM) | >4 disks (slow migration) |
+| Disk | <500GB total, no RDM/shared, no NVMe | NVMe disks (not supported by MTV), RDM or shared disks (unless storage copy offload) | >4 disks (slow migration) |
 | CPU/Memory | Fits within node capacity | -- | >16 vCPU or >64GB |
 | Power State | Powered off (cold migration) | -- | Powered on (warm migration available) |
 | Network | Single network | -- | Multiple networks (needs NetworkMap; MTV 2.11.7+ supports multi-NIC to single NAD) |
+| Anti-virus | No AV software installed | -- | **WARNING** -- AV software can cause migration failures. Remove before migrating. |
+| FIPS compliance | Source is vSphere 8+ if target is FIPS-compliant | **BLOCKER** if vSphere 6/7 to FIPS cluster | -- |
+| VDDK | VDDK init image configured on provider | -- | **WARNING** -- strongly recommended for migration speed |
 
 ## Step 7.5: Warm Migration Readiness (MTV 2.8+ GA)
 

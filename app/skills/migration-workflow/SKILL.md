@@ -70,14 +70,38 @@ Based on the assessment and user requirements, recommend a migration type:
 - No vCenter connectivity required
 - Useful when VMs have already been exported or when source vSphere is decommissioned
 
-## Phase 4: MIGRATE
+## Phase 3.5: DEEP INSPECTION (Optional, MTV 2.12 Tech Preview)
 
-1. Confirm with the user: "VM [name] is ready. Proceeding with [cold/warm/live] migration."
-2. Call `create_migration_plan(namespace, vm_name)` to trigger the migration
-   - For warm migration: set `warm: true` in the Migration manifest
-   - For warm migration with scheduled cutover: include `cutover` timestamp
-3. Report: "Migration triggered. Plan: [name], Migration: [name], Type: [cold/warm/live]"
-4. If creation fails: report the error and STOP
+Before migrating, optionally run Deep Inspection to analyze disk images and detect:
+- Guest OS compatibility issues
+- Missing VirtIO drivers
+- File system errors
+- CBT configuration problems
+
+This is a Technology Preview feature. MTV processes inspections in batches of 10 concurrent operations.
+
+## Phase 4: CREATE MIGRATION PLAN
+
+1. Call `create_migration_plan(namespace, vm_name, plan_name, target_namespace, warm)` to create:
+   - NetworkMap CR (source network name -> destination NAD or pod network)
+   - StorageMap CR (datastore -> StorageClass)
+   - Plan CR (VMs + mappings + warm/cold flag)
+2. The function waits for Plan validation (Ready:True) and returns plan details for review
+3. **Present the plan to the user for HITL review** before proceeding:
+   - VM specs (CPU, memory, disks, OS, firmware, power state)
+   - Network mappings
+   - Storage class
+   - Migration type (cold/warm)
+   - Plan validation status
+4. If plan validation fails: report the error and STOP
+
+## Phase 4.5: EXECUTE MIGRATION (after human approval)
+
+1. Call `execute_migration(namespace, plan_name, cutover)` to create the Migration CR
+   - For cold migration: leave cutover empty
+   - For warm migration with scheduled cutover: provide RFC 3339 timestamp (e.g., `2025-03-15T02:00:00Z`)
+2. Report: "Migration started. Plan: [name], Type: [cold/warm]"
+3. If execution fails: report the error and STOP
 
 ## Phase 5: MONITOR
 
@@ -95,13 +119,21 @@ Based on the assessment and user requirements, recommend a migration type:
 
 ## Phase 6: VALIDATE
 
-1. Call `list_migrated_vms(target_namespace)` to find the newly migrated VM
-2. Call `get_vm_details(target_namespace, vm_name)` to get full specification
-3. Compare with source VM properties from Phase 1:
-   - CPU cores match?
-   - Memory approximately matches?
-   - Disk count matches?
-   - VM is in expected status?
+1. Call `validate_migrated_vm(target_namespace, vm_name)` for comprehensive automated checks:
+   - VirtualMachineInstance status (Running?)
+   - QEMU guest agent connected (AgentConnected condition)
+   - PVC bound and capacity matches source
+   - CPU/memory matches source specs
+   - Network interfaces present
+2. Also call `get_vm_details(target_namespace, vm_name)` for detailed spec comparison
+3. Production validation checklist (per Red Hat docs):
+   - VM boot completion (OS prompt available, no kernel panic)
+   - Network connectivity (ping gateway and DNS from inside VM)
+   - Persistent volume mount (all expected volumes mounted with correct size)
+   - VirtIO driver status (VirtIO disk and network adapters present)
+   - Time sync (NTP synchronized, offset < 100ms)
+   - Application health (service responds within SLA)
+   - Source VM power state maintained (powered off after cold migration)
 4. Report any discrepancies
 
 ## Phase 7: REPORT

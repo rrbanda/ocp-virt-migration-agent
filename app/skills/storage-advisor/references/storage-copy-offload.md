@@ -7,15 +7,26 @@ directly between SAN arrays. Instead of ESXi -> network -> CDI importer -> PVC, 
 SAN-to-SAN (ESXi LUN -> array replication -> OCP worker LUN), dramatically reducing migration time
 and network load.
 
-GA in MTV 2.11 for **cold migrations** only. Not supported for warm or live migrations.
+GA in MTV 2.11+ for **cold migrations** only. Warm migration with XCOPY is Technology Preview in MTV 2.11
+(cutover may fall back to VDDK network transfer). Not supported for live migrations.
 
-## Supported Storage Arrays
+Uses the `vmkfstools` command on ESXi hosts to invoke `XCOPY` on the storage array via iSCSI or
+Fibre Channel. The source VMFS datastore and destination StorageClass must reside on the same
+physical array (and same pod for Pure Storage).
 
-| Vendor | Product | Status | Notes |
-|--------|---------|--------|-------|
-| Dell | PowerStore | GA | Requires VIB 0.3.0 on ESXi hosts |
-| Dell | PowerFlex | GA | Requires VIB 0.3.0 on ESXi hosts |
-| Infinidat | InfiniBox | Developer Preview | Not for production use |
+## Supported Storage Arrays (MTV 2.12)
+
+| Vendor | Product | CLI String (`storageVendorProduct`) | Notes |
+|--------|---------|-------------------------------------|-------|
+| Dell | PowerStore | `powerstore` | Requires VIB on ESXi hosts |
+| Dell | PowerFlex | `powerflex` | Requires VIB on ESXi hosts |
+| Dell | PowerMax | `powermax` | |
+| Hitachi | Vantara | `vantara` | |
+| NetApp | ONTAP | `ontap` | |
+| HPE | Primera/3PAR | `primera3par` | |
+| Pure Storage | FlashArray | `pureFlashArray` | Source and target must be on same array/pod |
+| Infinidat | InfiniBox | `infinibox` | |
+| IBM | FlashSystem | `flashsystem` | |
 
 ## Prerequisites
 
