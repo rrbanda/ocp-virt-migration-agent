@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: agent
-        image: ghcr.io/rrbanda/ocp-virt-migration-agent-sandbox:latest
+        image: ghcr.io/rrbanda/ocp-virt-migration-agent:latest
         imagePullPolicy: Always
         command:
         - bash
@@ -157,7 +157,7 @@ spec:
         - mountPath: /opt/openshell/bin
           name: openshell-supervisor-bin
       - name: workspace-init
-        image: ghcr.io/rrbanda/ocp-virt-migration-agent-sandbox:latest
+        image: ghcr.io/rrbanda/ocp-virt-migration-agent:latest
         imagePullPolicy: Always
         command:
         - sh
