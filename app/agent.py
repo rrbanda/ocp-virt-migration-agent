@@ -83,6 +83,8 @@ enable_tracing()
 # Configuration
 # ---------------------------------------------------------------------------
 ADK_MODEL = os.environ.get("ADK_MODEL", "openai/gemini/models/gemini-2.5-flash")
+ADK_MODEL_FAST = os.environ.get("ADK_MODEL_FAST", "")
+ADK_MODEL_REASONING = os.environ.get("ADK_MODEL_REASONING", "")
 SKILLS_DIR = pathlib.Path(os.environ.get("SKILLS_DIR", "/skills"))
 AGENT_NAME = os.environ.get("AGENT_NAME", "migration_coordinator")
 APP_NAME = "app"
@@ -96,6 +98,88 @@ AGENT_DESC = os.environ.get(
     "pipeline for discovery, assessment, migration, monitoring, validation, "
     "and report generation.",
 )
+
+# ---------------------------------------------------------------------------
+# Agent config loader (reads from ConfigMap YAML or falls back to defaults)
+# ---------------------------------------------------------------------------
+AGENT_CONFIG_PATH = os.environ.get("AGENT_CONFIG_PATH", "/mnt/config/agents.yaml")
+
+_agent_config: dict = {}
+
+
+def _load_agent_config() -> dict:
+    """Load agent configuration from YAML file, with fallback to empty config."""
+    global _agent_config
+    if _agent_config:
+        return _agent_config
+    try:
+        import yaml
+
+        with open(AGENT_CONFIG_PATH) as f:
+            _agent_config = yaml.safe_load(f) or {}
+        log.info("Loaded agent config from %s (%d agents)", AGENT_CONFIG_PATH, len(_agent_config.get("agents", {})))
+    except FileNotFoundError:
+        log.info("No agent config at %s -- using built-in defaults", AGENT_CONFIG_PATH)
+        _agent_config = {}
+    except Exception as e:
+        log.warning("Failed to load agent config: %s -- using defaults", e)
+        _agent_config = {}
+    return _agent_config
+
+
+def _resolve_model(tier: str):
+    """Resolve a model tier (fast/reasoning/default) to an actual model object."""
+    config = _load_agent_config()
+    defaults = config.get("defaults", {})
+
+    if tier == "fast":
+        model_str = ADK_MODEL_FAST or defaults.get("model_fast") or ADK_MODEL
+    elif tier == "reasoning":
+        model_str = ADK_MODEL_REASONING or defaults.get("model_reasoning") or ADK_MODEL
+    else:
+        model_str = defaults.get("model") or ADK_MODEL
+
+    if model_str.startswith("gemini") and "/" not in model_str:
+        return model_str
+    return LiteLlm(model=model_str)
+
+
+def _get_agent_instruction(agent_name: str, fallback: str) -> str:
+    """Get instruction for an agent from config, with template variable substitution."""
+    config = _load_agent_config()
+    agents = config.get("agents", {})
+    agent_cfg = agents.get(agent_name, {})
+    instruction = agent_cfg.get("instruction", fallback)
+
+    aap_hint = (
+        f"AAP template ID: {PRE_MIGRATION_TEMPLATE_ID}. Launch via launch_job, poll get_job_status, retrieve get_job_output. "
+        if PRE_MIGRATION_TEMPLATE_ID
+        else "No AAP configured. Assess using inventory data and skills. "
+    )
+    aap_post_hint = (
+        f"AAP template ID: {POST_MIGRATION_TEMPLATE_ID}. "
+        if POST_MIGRATION_TEMPLATE_ID
+        else "No AAP configured. Validate using APIs and skills. "
+    )
+
+    try:
+        return instruction.format(
+            mtv_namespace=DEFAULT_MTV_NAMESPACE,
+            virt_namespace=DEFAULT_VIRT_NAMESPACE,
+            aap_hint=aap_hint,
+            aap_post_hint=aap_post_hint,
+        )
+    except KeyError:
+        return instruction
+
+
+def _get_agent_model(agent_name: str, fallback_tier: str = "default"):
+    """Get the model for an agent from config."""
+    config = _load_agent_config()
+    agents = config.get("agents", {})
+    tier = agents.get(agent_name, {}).get("model", fallback_tier)
+    return _resolve_model(tier)
+
 
 # ---------------------------------------------------------------------------
 # Wrap tool functions with MLflow TOOL spans (no-op when tracing is off)
@@ -226,51 +310,19 @@ def monitor_router(ctx: Context, node_input=None):
 # ---------------------------------------------------------------------------
 def _build_workflow():
     """Build the ADK 2.0 Hybrid Workflow graph."""
-    if ADK_MODEL.startswith("gemini") and "/" not in ADK_MODEL:
-        model = ADK_MODEL
-    else:
-        model = LiteLlm(model=ADK_MODEL)
+    _load_agent_config()
     skill_tools = [SkillToolset(skills=skills)] if skills else []
     migration_tool = FunctionTool(create_migration_plan, require_confirmation=True)
     rollback_tool = FunctionTool(rollback_migration, require_confirmation=True)
+
     # -- Dispatcher: handles ad-hoc queries with all tools -----------------
     dispatcher = LlmAgent(
         name="Dispatcher",
-        model=model,
+        model=_get_agent_model("Dispatcher", "reasoning"),
         generate_content_config=genai_types.GenerateContentConfig(temperature=0.2),
-        instruction=(
-            "You are the Migration Coordinator for VMware-to-OpenShift Virtualization.\n\n"
-            "## How to respond\n"
-            "For most queries, use your tools and skills directly and give "
-            "the user a complete answer. ALWAYS load the relevant skill BEFORE "
-            "answering knowledge questions -- do NOT answer from memory alone.\n\n"
-            "## When to trigger the pipeline\n"
-            "ONLY when the user explicitly asks to run a full end-to-end migration "
-            "(e.g., 'migrate VM X', 'run full migration for Y'), output the exact "
-            "text 'PIPELINE: <vm_name> in <namespace>' as your response.\n\n"
-            "For batch migrations of multiple VMs, output 'BATCH: <vm_list> in <namespace>'.\n\n"
-            "## Available tools\n"
-            "- list_vmware_vms / list_migrated_vms / get_vm_details / get_migration_status\n"
-            "- create_migration_plan / get_pod_logs / check_cluster_readiness\n"
-            "- list_job_templates / launch_job / get_job_status / get_job_output\n"
-            "- save_report_artifact / rollback_migration\n"
-            "- search_migration_history / record_migration\n\n"
-            "## Skills -- ALWAYS load the matching skill for these topics\n"
-            "| Question about | Load this skill | Then read this reference |\n"
-            "| VMware vs OCP Virt features, vSphere EOL, licensing, OCP Virt 4.21 features | vmware-feature-mapper | references/feature-map.md, references/vmware-eol-context.md |\n"
-            "| Migration types (cold/warm/live), MTV 2.11, workflow steps | migration-workflow | SKILL.md |\n"
-            "| MTV errors, failures, stuck migrations, troubleshooting | mtv-log-analyzer | references/common-mtv-failures.md, references/production-failure-patterns.md |\n"
-            "| Storage options, CSI drivers, DR, storage copy offload | storage-advisor | references/csi-comparison.md, references/storage-copy-offload.md |\n"
-            "| Network design, NIC bonding, NADs, SR-IOV, UDN | network-architect | references/design-patterns.md |\n"
-            "| Cluster readiness, version compatibility, operator checks | cluster-preflight | references/compatibility-matrix.md |\n"
-            "| Pre-migration assessment, playbook output analysis | pre-migration-analyzer + ansible-output-parser | |\n"
-            "| Post-migration validation | post-migration-validator | |\n"
-            "| Day-2 operations, live migration, snapshots, GPU, hugepages | day2-operations | |\n"
-            "| Batch planning, wave scheduling, capacity sizing | batch-planner + capacity-analyzer + risk-assessor | |\n"
-            "| Report generation | assessment-report-generator or completion-report-generator | |\n\n"
-            f"Defaults: MTV namespace={DEFAULT_MTV_NAMESPACE}, "
-            f"Virt namespace={DEFAULT_VIRT_NAMESPACE}\n\n"
-            "Always explain what you're doing. Produce structured, actionable output."
+        instruction=_get_agent_instruction(
+            "Dispatcher",
+            "You are the Migration Coordinator. Use tools and skills to help with VMware-to-OCP Virt migrations.",
         ),
         tools=[
             list_vmware_vms,
@@ -298,17 +350,18 @@ def _build_workflow():
     # -- Done: summarizes ad-hoc results -----------------------------------
     done_agent = LlmAgent(
         name="DoneAgent",
-        model=model,
-        instruction="Summarize the dispatcher's result for the user in a clear, helpful format.",
+        model=_get_agent_model("DoneAgent", "fast"),
+        instruction=_get_agent_instruction(
+            "DoneAgent", "Summarize the dispatcher's result for the user in a clear, helpful format."
+        ),
         output_key="final_answer",
     )
     # -- Batch planner: plans multi-VM migrations --------------------------
     batch_planner = LlmAgent(
         name="BatchPlannerAgent",
-        model=model,
-        instruction=(
-            "Load the `batch-planner`, `risk-assessor`, and `capacity-analyzer` skills. "
-            "Follow their guidance to group VMs into migration batches."
+        model=_get_agent_model("BatchPlannerAgent", "reasoning"),
+        instruction=_get_agent_instruction(
+            "BatchPlannerAgent", "Load batch-planner, risk-assessor, capacity-analyzer skills."
         ),
         tools=[list_vmware_vms, *skill_tools],
         output_key="batch_plan",
@@ -316,41 +369,27 @@ def _build_workflow():
     # -- Pipeline agents ---------------------------------------------------
     discovery_agent = LlmAgent(
         name="DiscoveryAgent",
-        model=model,
-        instruction=(
-            "Load the `migration-workflow` skill and execute Phase 1: DISCOVER. "
-            f"Call `list_vmware_vms` (default namespace: {DEFAULT_MTV_NAMESPACE})."
+        model=_get_agent_model("DiscoveryAgent", "fast"),
+        instruction=_get_agent_instruction(
+            "DiscoveryAgent",
+            f"Load migration-workflow skill Phase 1. Call list_vmware_vms (namespace: {DEFAULT_MTV_NAMESPACE}).",
         ),
         tools=[list_vmware_vms],
         output_key="vm_inventory",
     )
-    _pre_hint = (
-        f"AAP template ID: {PRE_MIGRATION_TEMPLATE_ID}. "
-        "Launch via launch_job, poll get_job_status, retrieve get_job_output. "
-        if PRE_MIGRATION_TEMPLATE_ID
-        else "No AAP configured. Assess using inventory data and skills. "
-    )
     assessment_agent = LlmAgent(
         name="AssessmentAgent",
-        model=model,
-        instruction=(
-            "Load the `pre-migration-analyzer` skill and follow its instructions. "
-            "Also load `risk-assessor` for risk scoring. "
-            "VM inventory is in session state 'vm_inventory'. "
-            f"{_pre_hint}"
-            "If AAP output is available, also load `ansible-output-parser`."
-        ),
+        model=_get_agent_model("AssessmentAgent", "reasoning"),
+        instruction=_get_agent_instruction("AssessmentAgent", "Load pre-migration-analyzer and risk-assessor skills."),
         tools=[launch_job, get_job_status, get_job_output, *skill_tools],
         output_key="readiness_verdict",
     )
     execute_tool = FunctionTool(execute_migration, require_confirmation=True)
     migration_agent = LlmAgent(
         name="MigrationAgent",
-        model=model,
-        instruction=(
-            "Load the `migration-workflow` skill, Phase 4: MIGRATE. "
-            "The user has approved. Call execute_migration with plan_name and namespace "
-            "from session state. Refer to the skill for warm vs cold cutover guidance."
+        model=_get_agent_model("MigrationAgent", "fast"),
+        instruction=_get_agent_instruction(
+            "MigrationAgent", "Load migration-workflow skill Phase 4. Call execute_migration."
         ),
         tools=[execute_tool],
         before_tool_callback=migration_safety_callback,
@@ -358,28 +397,18 @@ def _build_workflow():
     )
     monitor_poller = LlmAgent(
         name="StatusPoller",
-        model=model,
-        instruction=(
-            "Load the `migration-workflow` skill, Phase 5: MONITOR. "
-            "Call get_migration_status. If errors appear, load `mtv-log-analyzer` skill "
-            "and call get_pod_logs for diagnosis."
+        model=_get_agent_model("StatusPoller", "fast"),
+        instruction=_get_agent_instruction(
+            "StatusPoller", "Load migration-workflow skill Phase 5. Call get_migration_status."
         ),
         tools=[get_migration_status, get_pod_logs, *skill_tools],
         output_key="migration_status",
     )
-    _post_hint = (
-        f"AAP template ID: {POST_MIGRATION_TEMPLATE_ID}. "
-        if POST_MIGRATION_TEMPLATE_ID
-        else "No AAP configured. Validate using APIs and skills. "
-    )
     validation_agent = LlmAgent(
         name="ValidationAgent",
-        model=model,
-        instruction=(
-            "Load the `post-migration-validator` skill and follow its instructions. "
-            "Call validate_migrated_vm for automated checks. "
-            "Compare results against source inventory in 'vm_inventory'. "
-            f"{_post_hint}"
+        model=_get_agent_model("ValidationAgent", "reasoning"),
+        instruction=_get_agent_instruction(
+            "ValidationAgent", "Load post-migration-validator skill. Call validate_migrated_vm."
         ),
         tools=[
             validate_migrated_vm,
@@ -394,22 +423,18 @@ def _build_workflow():
     )
     rollback_agent = LlmAgent(
         name="RollbackAgent",
-        model=model,
-        instruction=(
-            "Load the `migration-workflow` skill for error handling guidance. "
-            "Call rollback_migration with the plan name from session state 'migration_id'. "
-            "Then call record_migration to save the failure record."
+        model=_get_agent_model("RollbackAgent", "fast"),
+        instruction=_get_agent_instruction(
+            "RollbackAgent", "Load migration-workflow skill. Call rollback_migration and record_migration."
         ),
         tools=[rollback_tool, record_migration],
         output_key="rollback_result",
     )
     reporter_agent = LlmAgent(
         name="ReporterAgent",
-        model=model,
-        instruction=(
-            "Load the `completion-report-generator` skill and follow its report template. "
-            "Use session state for all data. Call save_report_artifact to persist the report. "
-            "Call record_migration to save the outcome."
+        model=_get_agent_model("ReporterAgent", "reasoning"),
+        instruction=_get_agent_instruction(
+            "ReporterAgent", "Load completion-report-generator skill. Call save_report_artifact."
         ),
         tools=[save_report_artifact, record_migration, *skill_tools],
         output_key="final_report",
@@ -465,10 +490,6 @@ _SINGLE_INSTRUCTION = (
 
 def _build_single_agent() -> LlmAgent:
     """Build the legacy single-agent fallback."""
-    if ADK_MODEL.startswith("gemini") and "/" not in ADK_MODEL:
-        model = ADK_MODEL
-    else:
-        model = LiteLlm(model=ADK_MODEL)
     migration_tool = FunctionTool(create_migration_plan, require_confirmation=True)
     rollback_tool = FunctionTool(rollback_migration, require_confirmation=True)
     skill_tools = [SkillToolset(skills=skills)] if skills else []
@@ -491,7 +512,7 @@ def _build_single_agent() -> LlmAgent:
         record_migration,
     ]
     return LlmAgent(
-        model=model,
+        model=_resolve_model("default"),
         name=os.environ.get("AGENT_NAME", "migration_agent"),
         description=AGENT_DESC,
         instruction=_SINGLE_INSTRUCTION,

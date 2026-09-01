@@ -65,6 +65,12 @@ spec:
         # -- LLM --
         - name: ADK_MODEL
           value: gemini/gemini-2.5-flash
+        - name: ADK_MODEL_FAST
+          value: ""
+        - name: ADK_MODEL_REASONING
+          value: ""
+        - name: AGENT_CONFIG_PATH
+          value: "/mnt/config/agents.yaml"
         - name: OPENAI_API_BASE
           value: https://generativelanguage.googleapis.com/v1beta/openai
         - name: GEMINI_API_KEY
@@ -152,6 +158,8 @@ spec:
           name: workspace
         - mountPath: /mnt/startup
           name: startup
+        - mountPath: /mnt/config
+          name: agent-config
       initContainers:
       - name: openshell-supervisor-install
         image: ghcr.io/nvidia/openshell/supervisor:0.0.111
@@ -207,6 +215,10 @@ spec:
         configMap:
           name: ocp-virt-migration-agent-startup
           defaultMode: 493
+      - name: agent-config
+        configMap:
+          name: ocp-virt-migration-agent-config
+          optional: true
   volumeClaimTemplates:
   - metadata:
       name: workspace
