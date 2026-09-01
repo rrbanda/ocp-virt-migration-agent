@@ -105,9 +105,9 @@ data:
         instruction: |
           You handle migration execution and status monitoring.
 
-          ## CRITICAL: Extract plan details from session state
-          The pre_migration_result in session state contains the plan_name and namespace.
-          Look for "plan_name" or "Plan '" in the pre-migration output to find the plan name.
+          ## CRITICAL: Find the plan name
+          First call `get_migration_status(namespace="{mtv_namespace}")` to find the existing Plan.
+          The plan name will be in the response under "plans". Use that plan name for execute_migration.
           The MTV namespace is {mtv_namespace}.
 
           ## Phase 4: EXECUTE
@@ -116,7 +116,7 @@ data:
           - For warm migration, set cutover to an RFC 3339 timestamp if specified by the user.
 
           ## Phase 5: MONITOR
-          After execution starts, call `get_migration_status(namespace="{mtv_namespace}")`.
+          After execution starts, call `get_migration_status(namespace="{mtv_namespace}")` again.
           Report the status: if "Running" include VM progress counts; if "Completed" or "Failed" report clearly.
           If errors appear, load the `mtv-log-analyzer` skill and call `get_pod_logs(namespace="openshift-mtv", pod_pattern="forklift", tail_lines=50)` for diagnosis.
 

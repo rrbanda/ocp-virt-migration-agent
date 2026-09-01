@@ -265,6 +265,15 @@ def readiness_router(node_input=None):
 
 async def migration_approval(ctx: Context, node_input):
     """HITL: pause for human approval before triggering real migration."""
+    plan_summary = ""
+    if node_input:
+        text = str(node_input)
+        for marker in ("Plan '", "plan_name"):
+            idx = text.find(marker)
+            if idx >= 0:
+                plan_summary = text[max(0, idx - 50) : idx + 100]
+                break
+
     if not ctx.resume_inputs:
         yield RequestInput(
             interrupt_id="migration_approval",
@@ -275,7 +284,8 @@ async def migration_approval(ctx: Context, node_input):
             ),
         )
         return
-    yield Event(output=ctx.resume_inputs.get("migration_approval", "no"))
+    response = ctx.resume_inputs.get("migration_approval", "no")
+    yield Event(output={"approval": str(response), "plan_context": plan_summary})
 
 
 def approval_router(node_input):
