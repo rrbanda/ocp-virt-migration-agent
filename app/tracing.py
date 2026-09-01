@@ -86,12 +86,12 @@ def enable_tracing() -> None:
 
     try:
         _check_mlflow_health(tracking_uri, max_wait=timeout)
+        log.info("[Tracing] MLflow reachable at %s", _safe_uri(tracking_uri))
     except RuntimeError:
         log.warning(
-            "[Tracing] MLflow unreachable at %s -- continuing without tracing",
+            "[Tracing] MLflow health check failed at %s -- attempting connection anyway (RHOAI uses different path)",
             _safe_uri(tracking_uri),
         )
-        return
 
     try:
         mlflow.set_tracking_uri(tracking_uri)
