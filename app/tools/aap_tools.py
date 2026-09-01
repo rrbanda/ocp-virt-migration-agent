@@ -101,13 +101,15 @@ def list_job_templates() -> dict:
         data = _get(_api("/job_templates/")).json()
         templates = []
         for jt in data.get("results", []):
-            templates.append({
-                "id": jt["id"],
-                "name": jt["name"],
-                "description": jt.get("description", ""),
-                "last_job_run": jt.get("last_job_run"),
-                "status": jt.get("status", "unknown"),
-            })
+            templates.append(
+                {
+                    "id": jt["id"],
+                    "name": jt["name"],
+                    "description": jt.get("description", ""),
+                    "last_job_run": jt.get("last_job_run"),
+                    "status": jt.get("status", "unknown"),
+                }
+            )
         return {"templates": templates, "count": len(templates)}
     except requests.exceptions.ConnectionError:
         return {"error": f"Cannot connect to AAP at {AAP_URL}"}
@@ -227,8 +229,9 @@ def get_job_output(job_id: int) -> dict:
         if len(output_text) > AAP_MAX_OUTPUT_BYTES:
             output_text = output_text[:AAP_MAX_OUTPUT_BYTES]
             truncated = True
-            log.warning("Job %s output truncated from %d to %d bytes",
-                        job_id, len(output_resp.text), AAP_MAX_OUTPUT_BYTES)
+            log.warning(
+                "Job %s output truncated from %d to %d bytes", job_id, len(output_resp.text), AAP_MAX_OUTPUT_BYTES
+            )
 
         result = {
             "job_id": job_id,

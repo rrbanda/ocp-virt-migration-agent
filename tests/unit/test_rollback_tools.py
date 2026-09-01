@@ -6,7 +6,6 @@ from app.tools.rollback_tools import rollback_migration
 
 
 class TestRollbackMigration:
-
     @patch("app.tools.rollback_tools.K8S_AVAILABLE", False)
     def test_returns_error_when_k8s_unavailable(self):
         result = rollback_migration("ns", "plan-1")
@@ -38,6 +37,7 @@ class TestRollbackMigration:
     @patch("app.tools.rollback_tools.mtv_custom_api")
     def test_handles_404_gracefully(self, mock_api):
         from app.tools.rollback_tools import ApiException
+
         mock_client = MagicMock()
         err = ApiException(status=404, reason="Not Found")
         mock_client.delete_namespaced_custom_object.side_effect = err

@@ -65,19 +65,22 @@ class TestPluginSignatures:
 
 
 class TestPluginBehavior:
-
     @pytest.mark.asyncio
     async def test_before_tool_returns_none(self, plugin, mock_tool, mock_tool_context):
         result = await plugin.before_tool_callback(
-            tool=mock_tool, tool_args={"ns": "test"}, tool_context=mock_tool_context,
+            tool=mock_tool,
+            tool_args={"ns": "test"},
+            tool_context=mock_tool_context,
         )
         assert result is None
 
     @pytest.mark.asyncio
     async def test_after_tool_returns_none(self, plugin, mock_tool, mock_tool_context):
         result = await plugin.after_tool_callback(
-            tool=mock_tool, tool_args={"ns": "test"},
-            tool_context=mock_tool_context, result={"status": "ok"},
+            tool=mock_tool,
+            tool_args={"ns": "test"},
+            tool_context=mock_tool_context,
+            result={"status": "ok"},
         )
         assert result is None
 
@@ -86,15 +89,18 @@ class TestPluginBehavior:
         agent = MagicMock()
         agent.name = "Dispatcher"
         result = await plugin.before_agent_callback(
-            callback_context=mock_callback_context, agent=agent,
+            callback_context=mock_callback_context,
+            agent=agent,
         )
         assert result is None
 
     @pytest.mark.asyncio
     async def test_on_tool_error_returns_none(self, plugin, mock_tool, mock_tool_context):
         result = await plugin.on_tool_error_callback(
-            tool=mock_tool, tool_args={},
-            tool_context=mock_tool_context, error=RuntimeError("test"),
+            tool=mock_tool,
+            tool_args={},
+            tool_context=mock_tool_context,
+            error=RuntimeError("test"),
         )
         assert result is None
 
@@ -111,6 +117,7 @@ class TestPluginBehavior:
     async def test_before_model_returns_none(self, plugin, mock_callback_context):
         llm_request = MagicMock()
         result = await plugin.before_model_callback(
-            callback_context=mock_callback_context, llm_request=llm_request,
+            callback_context=mock_callback_context,
+            llm_request=llm_request,
         )
         assert result is None

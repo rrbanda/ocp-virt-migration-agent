@@ -26,4 +26,5 @@ def load_eval_ids():
 def agent_module():
     """Import the agent module (triggers skill discovery and agent build)."""
     from app import agent
+
     return agent

@@ -139,14 +139,17 @@ async def _non_stream(user_text: str, model_id: str, session_id: str | None = No
         if session_id:
             try:
                 await _runner.session_service.get_session(
-                    app_name=_runner.app_name, user_id=USER_ID, session_id=session_id,
+                    app_name=_runner.app_name,
+                    user_id=USER_ID,
+                    session_id=session_id,
                 )
             except Exception:
                 session_id = None
 
         if not session_id:
             session = await _runner.session_service.create_session(
-                app_name=_runner.app_name, user_id=USER_ID,
+                app_name=_runner.app_name,
+                user_id=USER_ID,
             )
             session_id = session.id
 
@@ -158,41 +161,50 @@ async def _non_stream(user_text: str, model_id: str, session_id: str | None = No
         async def _run():
             nonlocal all_text_parts
             async for event in _runner.run_async(
-                user_id=USER_ID, session_id=session_id, new_message=msg,
+                user_id=USER_ID,
+                session_id=session_id,
+                new_message=msg,
                 run_config=_run_config,
             ):
                 if not event.content or not event.content.parts:
                     continue
                 for part in event.content.parts:
                     if part.function_call:
-                        context.append({
-                            "role": "assistant",
-                            "content": f"Calling tool: {part.function_call.name}",
-                            "tool_calls": [{
-                                "type": "function",
-                                "function": {
-                                    "name": part.function_call.name,
-                                    "arguments": json.dumps(
-                                        dict(part.function_call.args) if part.function_call.args else {}
-                                    ),
-                                },
-                            }],
-                        })
+                        context.append(
+                            {
+                                "role": "assistant",
+                                "content": f"Calling tool: {part.function_call.name}",
+                                "tool_calls": [
+                                    {
+                                        "type": "function",
+                                        "function": {
+                                            "name": part.function_call.name,
+                                            "arguments": json.dumps(
+                                                dict(part.function_call.args) if part.function_call.args else {}
+                                            ),
+                                        },
+                                    }
+                                ],
+                            }
+                        )
                     elif part.function_response:
-                        context.append({
-                            "role": "tool",
-                            "name": part.function_response.name,
-                            "content": json.dumps(
-                                dict(part.function_response.response)
-                                if part.function_response.response else {}
-                            ),
-                        })
+                        context.append(
+                            {
+                                "role": "tool",
+                                "name": part.function_response.name,
+                                "content": json.dumps(
+                                    dict(part.function_response.response) if part.function_response.response else {}
+                                ),
+                            }
+                        )
                     elif part.text:
                         role = event.content.role or "model"
-                        context.append({
-                            "role": "assistant" if role == "model" else role,
-                            "content": part.text,
-                        })
+                        context.append(
+                            {
+                                "role": "assistant" if role == "model" else role,
+                                "content": part.text,
+                            }
+                        )
                         if role == "model":
                             all_text_parts.append(part.text)
 
@@ -205,11 +217,13 @@ async def _non_stream(user_text: str, model_id: str, session_id: str | None = No
             "object": "chat.completion",
             "created": int(time.time()),
             "model": model_id,
-            "choices": [{
-                "index": 0,
-                "message": {"role": "assistant", "content": final_text},
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": final_text},
+                    "finish_reason": "stop",
+                }
+            ],
             "context": context,
             "usage": None,
         }
@@ -231,21 +245,26 @@ async def _stream(user_text: str, model_id: str, session_id: str | None = None) 
             if sid:
                 try:
                     await _runner.session_service.get_session(
-                        app_name=_runner.app_name, user_id=USER_ID, session_id=sid,
+                        app_name=_runner.app_name,
+                        user_id=USER_ID,
+                        session_id=sid,
                     )
                 except Exception:
                     sid = None
 
             if not sid:
                 session = await _runner.session_service.create_session(
-                    app_name=_runner.app_name, user_id=USER_ID,
+                    app_name=_runner.app_name,
+                    user_id=USER_ID,
                 )
                 sid = session.id
 
             msg = types.Content(role="user", parts=[types.Part.from_text(text=user_text)])
 
             async for event in _runner.run_async(
-                user_id=USER_ID, session_id=sid, new_message=msg,
+                user_id=USER_ID,
+                session_id=sid,
+                new_message=msg,
                 run_config=_run_config,
             ):
                 if not event.content or not event.content.parts:
@@ -259,11 +278,13 @@ async def _stream(user_text: str, model_id: str, session_id: str | None = None) 
                         "object": "chat.completion.chunk",
                         "created": created,
                         "model": model_id,
-                        "choices": [{
-                            "index": 0,
-                            "delta": {"role": "assistant", "content": text},
-                            "finish_reason": None,
-                        }],
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {"role": "assistant", "content": text},
+                                "finish_reason": None,
+                            }
+                        ],
                     }
                     yield f"data: {json.dumps(chunk)}\n\n"
 

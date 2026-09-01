@@ -5,12 +5,12 @@ from unittest.mock import patch
 
 
 class TestEnableTracing:
-
     @patch.dict(os.environ, {"MLFLOW_TRACKING_URI": ""}, clear=False)
     def test_noop_when_uri_not_set(self):
         from importlib import reload
 
         import app.tracing
+
         reload(app.tracing)
         assert app.tracing._TRACING_ENABLED is False
 
@@ -20,6 +20,7 @@ class TestEnableTracing:
             from importlib import reload
 
             import app.tracing
+
             try:
                 reload(app.tracing)
             except Exception:
@@ -28,7 +29,6 @@ class TestEnableTracing:
 
 
 class TestWrapToolWithTrace:
-
     def test_passthrough_when_tracing_disabled(self):
         from app.tracing import wrap_tool_with_trace
 

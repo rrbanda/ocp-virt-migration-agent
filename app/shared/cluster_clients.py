@@ -119,8 +119,10 @@ def _ensure_default_config():
             config.load_kube_config()
             log.info("Loaded kubeconfig from default location")
         except config.ConfigException:
-            log.warning("No Kubernetes config available (neither in-cluster nor kubeconfig). "
-                        "MTV/OCP tools will fail unless explicit API URLs and tokens are configured.")
+            log.warning(
+                "No Kubernetes config available (neither in-cluster nor kubeconfig). "
+                "MTV/OCP tools will fail unless explicit API URLs and tokens are configured."
+            )
     _incluster_loaded = True
 
 

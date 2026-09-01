@@ -28,17 +28,13 @@ async def test_assessment_report_structure(http_client, agent_url, golden):
     result = await run_query(http_client, agent_url, golden["query"])
     content = result["choices"][0]["message"]["content"]
     assert content, "Empty response"
-    assert len(content) > 200, (
-        f"Assessment response too short ({len(content)} chars) -- "
-        "expected a structured report"
-    )
+    assert len(content) > 200, f"Assessment response too short ({len(content)} chars) -- expected a structured report"
 
     content_lower = content.lower()
     structural_markers = ["ready", "risk", "blocker", "warning", "recommendation"]
     found = [m for m in structural_markers if m in content_lower]
     assert len(found) >= 2, (
-        f"Assessment response lacks structure. "
-        f"Expected markers like {structural_markers}, found: {found}"
+        f"Assessment response lacks structure. Expected markers like {structural_markers}, found: {found}"
     )
 
 
@@ -48,17 +44,13 @@ async def test_validation_report_structure(http_client, agent_url, golden):
     result = await run_query(http_client, agent_url, golden["query"])
     content = result["choices"][0]["message"]["content"]
     assert content, "Empty response"
-    assert len(content) > 200, (
-        f"Validation response too short ({len(content)} chars) -- "
-        "expected a structured report"
-    )
+    assert len(content) > 200, f"Validation response too short ({len(content)} chars) -- expected a structured report"
 
     content_lower = content.lower()
     structural_markers = ["platform", "openshift virtualization", "validated", "pass", "fail"]
     found = [m for m in structural_markers if m in content_lower]
     assert len(found) >= 2, (
-        f"Validation response lacks structure. "
-        f"Expected markers like {structural_markers}, found: {found}"
+        f"Validation response lacks structure. Expected markers like {structural_markers}, found: {found}"
     )
 
 

@@ -76,8 +76,7 @@ def enable_tracing() -> None:
         import mlflow.litellm
     except ModuleNotFoundError as exc:
         raise ModuleNotFoundError(
-            "MLFLOW_TRACKING_URI is set but mlflow is not installed. "
-            "Install with: pip install 'mlflow>=3.10.0'"
+            "MLFLOW_TRACKING_URI is set but mlflow is not installed. Install with: pip install 'mlflow>=3.10.0'"
         ) from exc
 
     try:
@@ -104,7 +103,8 @@ def enable_tracing() -> None:
         _TRACING_ENABLED = True
         log.info(
             "[Tracing ENABLED] MLflow -> %s, experiment: %s",
-            _safe_uri(tracking_uri), experiment,
+            _safe_uri(tracking_uri),
+            experiment,
         )
     except Exception as exc:
         log.warning("[Tracing] Failed to configure MLflow: %s", exc)

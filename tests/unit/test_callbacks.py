@@ -46,6 +46,7 @@ class TestMigrationSafetyCallback:
         from importlib import reload
 
         import app.callbacks
+
         reload(app.callbacks)
         from app.callbacks import migration_safety_callback as cb
 
@@ -59,6 +60,7 @@ class TestMigrationSafetyCallback:
         from importlib import reload
 
         import app.callbacks
+
         reload(app.callbacks)
         from app.callbacks import migration_safety_callback as cb
 

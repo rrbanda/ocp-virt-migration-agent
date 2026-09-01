@@ -5,12 +5,12 @@ from unittest.mock import MagicMock, patch
 
 
 class TestListJobTemplates:
-
     @patch.dict(os.environ, {"AAP_URL": "", "AAP_TOKEN": ""})
     def test_returns_error_when_not_configured(self):
         from importlib import reload
 
         import app.tools.aap_tools
+
         reload(app.tools.aap_tools)
         result = app.tools.aap_tools.list_job_templates()
         assert "error" in result
@@ -21,6 +21,7 @@ class TestListJobTemplates:
         from importlib import reload
 
         import app.tools.aap_tools
+
         reload(app.tools.aap_tools)
 
         mock_resp = MagicMock()
@@ -37,12 +38,12 @@ class TestListJobTemplates:
 
 
 class TestLaunchJob:
-
     @patch.dict(os.environ, {"AAP_URL": "", "AAP_TOKEN": ""})
     def test_returns_error_when_not_configured(self):
         from importlib import reload
 
         import app.tools.aap_tools
+
         reload(app.tools.aap_tools)
         result = app.tools.aap_tools.launch_job(template_id=1)
         assert "error" in result
@@ -52,6 +53,7 @@ class TestLaunchJob:
         from importlib import reload
 
         import app.tools.aap_tools
+
         reload(app.tools.aap_tools)
 
         mock_resp = MagicMock()
@@ -62,12 +64,12 @@ class TestLaunchJob:
 
 
 class TestGetJobOutput:
-
     @patch.dict(os.environ, {"AAP_URL": "https://aap.example.com", "AAP_TOKEN": "t", "AAP_MAX_OUTPUT_BYTES": "100"})
     def test_truncates_large_output(self):
         from importlib import reload
 
         import app.tools.aap_tools
+
         reload(app.tools.aap_tools)
 
         mock_job = MagicMock()
@@ -86,6 +88,7 @@ class TestGetJobOutput:
         from importlib import reload
 
         import app.tools.aap_tools
+
         reload(app.tools.aap_tools)
 
         mock_resp = MagicMock()

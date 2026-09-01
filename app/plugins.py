@@ -24,10 +24,7 @@ _tool_start_time: ContextVar[float | None] = ContextVar("_tool_start_time", defa
 
 def _redact(args: dict) -> dict:
     """Return a shallow copy of *args* with sensitive values masked."""
-    return {
-        k: "***REDACTED***" if any(s in k.lower() for s in _REDACTED_KEYS) else v
-        for k, v in args.items()
-    }
+    return {k: "***REDACTED***" if any(s in k.lower() for s in _REDACTED_KEYS) else v for k, v in args.items()}
 
 
 class MigrationLoggingPlugin(BasePlugin):
@@ -38,28 +35,27 @@ class MigrationLoggingPlugin(BasePlugin):
 
     # -- Agent lifecycle ---------------------------------------------------
 
-    async def before_agent_callback(
-        self, *, callback_context: CallbackContext, **kwargs
-    ) -> types.Content | None:
+    async def before_agent_callback(self, *, callback_context: CallbackContext, **kwargs) -> types.Content | None:
         agent: BaseAgent = kwargs.get("agent")
         agent_name = agent.name if agent else "unknown"
         log.info(
             "[plugin] agent_start  name=%s  invocation=%s",
-            agent_name, callback_context.invocation_id,
+            agent_name,
+            callback_context.invocation_id,
         )
         callback_context.state[f"_plugin_agent_start:{agent_name}"] = time.monotonic()
         return None
 
-    async def after_agent_callback(
-        self, *, callback_context: CallbackContext, **kwargs
-    ) -> types.Content | None:
+    async def after_agent_callback(self, *, callback_context: CallbackContext, **kwargs) -> types.Content | None:
         agent: BaseAgent = kwargs.get("agent")
         agent_name = agent.name if agent else "unknown"
         started = callback_context.state.get(f"_plugin_agent_start:{agent_name}")
         duration_ms = round((time.monotonic() - started) * 1000) if started else -1
         log.info(
             "[plugin] agent_end    name=%s  invocation=%s  duration_ms=%d",
-            agent_name, callback_context.invocation_id, duration_ms,
+            agent_name,
+            callback_context.invocation_id,
+            duration_ms,
         )
         return None
 
@@ -71,7 +67,8 @@ class MigrationLoggingPlugin(BasePlugin):
         _tool_start_time.set(time.monotonic())
         log.info(
             "[plugin] tool_start   name=%s  args=%s",
-            tool.name, _redact(tool_args),
+            tool.name,
+            _redact(tool_args),
         )
         return None
 
@@ -83,7 +80,9 @@ class MigrationLoggingPlugin(BasePlugin):
         status = result.get("status", result.get("error", "ok")) if isinstance(result, dict) else "ok"
         log.info(
             "[plugin] tool_end     name=%s  status=%s  duration_ms=%d",
-            tool.name, status, duration_ms,
+            tool.name,
+            status,
+            duration_ms,
         )
         return None
 
@@ -92,7 +91,9 @@ class MigrationLoggingPlugin(BasePlugin):
     ) -> dict | None:
         log.error(
             "[plugin] tool_error   name=%s  error=%s  args=%s",
-            tool.name, error, _redact(tool_args),
+            tool.name,
+            error,
+            _redact(tool_args),
         )
         return None
 
@@ -103,7 +104,8 @@ class MigrationLoggingPlugin(BasePlugin):
     ) -> LlmResponse | None:
         log.info(
             "[plugin] model_start  agent=%s  invocation=%s",
-            callback_context.agent_name, callback_context.invocation_id,
+            callback_context.agent_name,
+            callback_context.invocation_id,
         )
         return None
 
@@ -112,7 +114,8 @@ class MigrationLoggingPlugin(BasePlugin):
     ) -> LlmResponse | None:
         log.info(
             "[plugin] model_end    agent=%s  invocation=%s",
-            callback_context.agent_name, callback_context.invocation_id,
+            callback_context.agent_name,
+            callback_context.invocation_id,
         )
         return None
 
@@ -121,6 +124,8 @@ class MigrationLoggingPlugin(BasePlugin):
     ) -> LlmResponse | None:
         log.error(
             "[plugin] model_error  agent=%s  error=%s  invocation=%s",
-            callback_context.agent_name, error, callback_context.invocation_id,
+            callback_context.agent_name,
+            error,
+            callback_context.invocation_id,
         )
         return None

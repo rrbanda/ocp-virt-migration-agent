@@ -44,11 +44,17 @@ KUBEVIRT_VERSION = "v1"
 DEFAULT_NETWORK_DESTINATION = os.environ.get("DEFAULT_NETWORK_DESTINATION", "pod")
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=15), retry=retry_if_exception_type(_RETRYABLE), reraise=True)
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(min=2, max=15),
+    retry=retry_if_exception_type(_RETRYABLE),
+    reraise=True,
+)
 def _http_get(url: str, headers: dict, timeout: int = 30) -> requests.Response:
     resp = requests.get(url, headers=headers, verify=_OCP_VERIFY, timeout=timeout)
     resp.raise_for_status()
     return resp
+
 
 from ..shared.cluster_clients import (
     DEFAULT_MTV_NAMESPACE,
@@ -79,7 +85,8 @@ _k8s_retry = retry(
     reraise=True,
     before_sleep=lambda rs: log.warning(
         "K8s API call failed (status %s), retrying attempt %d...",
-        getattr(rs.outcome.exception(), "status", "?"), rs.attempt_number,
+        getattr(rs.outcome.exception(), "status", "?"),
+        rs.attempt_number,
     ),
 )
 
@@ -116,9 +123,12 @@ def _resolve_inventory(mtv_api) -> tuple[str, str]:
     if MTV_INVENTORY_URL:
         return MTV_INVENTORY_URL.rstrip("/"), token
 
-    inv_route = _k8s_get(mtv_api,
-        group="route.openshift.io", version="v1",
-        namespace=MTV_OPERATOR_NAMESPACE, plural="routes",
+    inv_route = _k8s_get(
+        mtv_api,
+        group="route.openshift.io",
+        version="v1",
+        namespace=MTV_OPERATOR_NAMESPACE,
+        plural="routes",
         name=MTV_INVENTORY_ROUTE_NAME,
     )
     inv_url = f"https://{inv_route['spec']['host']}"
@@ -144,13 +154,15 @@ def list_vmware_vms(namespace: str = "") -> dict:
 
     try:
         api = mtv_custom_api()
-        providers = _k8s_list(api,
-            group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
-            namespace=namespace, plural="providers",
+        providers = _k8s_list(
+            api,
+            group=FORKLIFT_GROUP,
+            version=FORKLIFT_VERSION,
+            namespace=namespace,
+            plural="providers",
         )
         vmware_provider = next(
-            (p for p in providers.get("items", [])
-             if p.get("spec", {}).get("type") == "vsphere"), None
+            (p for p in providers.get("items", []) if p.get("spec", {}).get("type") == "vsphere"), None
         )
         if not vmware_provider:
             return {"error": f"No VMware provider found in namespace {namespace}"}
@@ -208,24 +220,29 @@ def list_migrated_vms(namespace: str = "") -> dict:
 
     try:
         api = virt_custom_api()
-        vms = _k8s_list(api,
-            group=KUBEVIRT_GROUP, version=KUBEVIRT_VERSION,
-            namespace=namespace, plural="virtualmachines",
+        vms = _k8s_list(
+            api,
+            group=KUBEVIRT_GROUP,
+            version=KUBEVIRT_VERSION,
+            namespace=namespace,
+            plural="virtualmachines",
         )
         result = []
         for vm in vms.get("items", []):
             spec = vm.get("spec", {})
             domain = spec.get("template", {}).get("spec", {}).get("domain", {})
             status = vm.get("status", {})
-            result.append({
-                "name": vm["metadata"]["name"],
-                "namespace": namespace,
-                "running": spec.get("running", False),
-                "status": status.get("printableStatus", "Unknown"),
-                "cpu_cores": domain.get("cpu", {}).get("cores"),
-                "memory": domain.get("resources", {}).get("requests", {}).get("memory"),
-                "created": vm["metadata"].get("creationTimestamp"),
-            })
+            result.append(
+                {
+                    "name": vm["metadata"]["name"],
+                    "namespace": namespace,
+                    "running": spec.get("running", False),
+                    "status": status.get("printableStatus", "Unknown"),
+                    "cpu_cores": domain.get("cpu", {}).get("cores"),
+                    "memory": domain.get("resources", {}).get("requests", {}).get("memory"),
+                    "created": vm["metadata"].get("creationTimestamp"),
+                }
+            )
         return {"namespace": namespace, "vm_count": len(result), "vms": result}
     except ApiException as e:
         return {"error": f"Kubernetes API error: {e.status} {e.reason}"}
@@ -248,9 +265,13 @@ def get_vm_details(namespace: str, vm_name: str) -> dict:
 
     try:
         api = virt_custom_api()
-        vm = _k8s_get(api,
-            group=KUBEVIRT_GROUP, version=KUBEVIRT_VERSION,
-            namespace=namespace, plural="virtualmachines", name=vm_name,
+        vm = _k8s_get(
+            api,
+            group=KUBEVIRT_GROUP,
+            version=KUBEVIRT_VERSION,
+            namespace=namespace,
+            plural="virtualmachines",
+            name=vm_name,
         )
         spec = vm.get("spec", {})
         domain = spec.get("template", {}).get("spec", {}).get("domain", {})
@@ -258,7 +279,8 @@ def get_vm_details(namespace: str, vm_name: str) -> dict:
         status = vm.get("status", {})
 
         return {
-            "name": vm_name, "namespace": namespace,
+            "name": vm_name,
+            "namespace": namespace,
             "running": spec.get("running", False),
             "status": status.get("printableStatus", "Unknown"),
             "cpu_cores": domain.get("cpu", {}).get("cores"),
@@ -295,13 +317,19 @@ def get_migration_status(namespace: str = "") -> dict:
 
     try:
         api = mtv_custom_api()
-        plans = _k8s_list(api,
-            group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
-            namespace=namespace, plural="plans",
+        plans = _k8s_list(
+            api,
+            group=FORKLIFT_GROUP,
+            version=FORKLIFT_VERSION,
+            namespace=namespace,
+            plural="plans",
         )
-        migrations = _k8s_list(api,
-            group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
-            namespace=namespace, plural="migrations",
+        migrations = _k8s_list(
+            api,
+            group=FORKLIFT_GROUP,
+            version=FORKLIFT_VERSION,
+            namespace=namespace,
+            plural="migrations",
         )
 
         plan_list = []
@@ -309,29 +337,35 @@ def get_migration_status(namespace: str = "") -> dict:
             conditions = p.get("status", {}).get("conditions", [])
             migration_status = p.get("status", {}).get("migration", {})
             vms = migration_status.get("vms", [])
-            plan_list.append({
-                "name": p["metadata"]["name"],
-                "vm_count": len(p.get("spec", {}).get("vms", [])),
-                "phase": next((c["type"] for c in conditions if c.get("status") == "True"), "Unknown"),
-                "vms_completed": sum(1 for v in vms if v.get("phase") == "Completed"),
-                "vms_running": sum(1 for v in vms if v.get("phase") == "Running"),
-                "vms_failed": sum(1 for v in vms if v.get("phase") == "Failed"),
-            })
+            plan_list.append(
+                {
+                    "name": p["metadata"]["name"],
+                    "vm_count": len(p.get("spec", {}).get("vms", [])),
+                    "phase": next((c["type"] for c in conditions if c.get("status") == "True"), "Unknown"),
+                    "vms_completed": sum(1 for v in vms if v.get("phase") == "Completed"),
+                    "vms_running": sum(1 for v in vms if v.get("phase") == "Running"),
+                    "vms_failed": sum(1 for v in vms if v.get("phase") == "Failed"),
+                }
+            )
 
         migration_list = []
         for m in migrations.get("items", []):
             conditions = m.get("status", {}).get("conditions", [])
-            migration_list.append({
-                "name": m["metadata"]["name"],
-                "plan": m.get("spec", {}).get("plan", {}).get("name"),
-                "phase": next((c["type"] for c in conditions if c.get("status") == "True"), "Unknown"),
-                "started": m["metadata"].get("creationTimestamp"),
-            })
+            migration_list.append(
+                {
+                    "name": m["metadata"]["name"],
+                    "plan": m.get("spec", {}).get("plan", {}).get("name"),
+                    "phase": next((c["type"] for c in conditions if c.get("status") == "True"), "Unknown"),
+                    "started": m["metadata"].get("creationTimestamp"),
+                }
+            )
 
         return {
             "namespace": namespace,
-            "plans": plan_list, "plan_count": len(plan_list),
-            "migrations": migration_list, "migration_count": len(migration_list),
+            "plans": plan_list,
+            "plan_count": len(plan_list),
+            "migrations": migration_list,
+            "migration_count": len(migration_list),
         }
     except ApiException as e:
         return {"error": f"Kubernetes API error: {e.status} {e.reason}"}
@@ -380,17 +414,18 @@ def create_migration_plan(
 
         log.info("Creating migration plan for VM '%s' in namespace '%s'", vm_name, namespace)
 
-        providers = _k8s_list(api,
-            group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
-            namespace=namespace, plural="providers",
+        providers = _k8s_list(
+            api,
+            group=FORKLIFT_GROUP,
+            version=FORKLIFT_VERSION,
+            namespace=namespace,
+            plural="providers",
         )
         vmware_provider = next(
-            (p for p in providers.get("items", [])
-             if p.get("spec", {}).get("type") == "vsphere"), None
+            (p for p in providers.get("items", []) if p.get("spec", {}).get("type") == "vsphere"), None
         )
         host_provider = next(
-            (p for p in providers.get("items", [])
-             if p.get("spec", {}).get("type") == "openshift"), None
+            (p for p in providers.get("items", []) if p.get("spec", {}).get("type") == "openshift"), None
         )
         if not vmware_provider:
             return {"error": f"No VMware (vsphere) provider found in namespace '{namespace}'"}
@@ -416,12 +451,14 @@ def create_migration_plan(
 
         src_provider_ref = {
             "apiVersion": _FORKLIFT_API,
-            "kind": "Provider", "name": vmware_provider["metadata"]["name"],
+            "kind": "Provider",
+            "name": vmware_provider["metadata"]["name"],
             "namespace": namespace,
         }
         dst_provider_ref = {
             "apiVersion": _FORKLIFT_API,
-            "kind": "Provider", "name": host_provider["metadata"]["name"],
+            "kind": "Provider",
+            "name": host_provider["metadata"]["name"],
             "namespace": namespace,
         }
 
@@ -435,16 +472,21 @@ def create_migration_plan(
 
         nmap = {
             "apiVersion": _FORKLIFT_API,
-            "kind": "NetworkMap", "metadata": {"name": nmap_name, "namespace": namespace},
+            "kind": "NetworkMap",
+            "metadata": {"name": nmap_name, "namespace": namespace},
             "spec": {
                 "provider": {"source": src_provider_ref, "destination": dst_provider_ref},
                 "map": nmap_map,
             },
         }
         try:
-            _k8s_create(api,
-                group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
-                namespace=namespace, plural="networkmaps", body=nmap,
+            _k8s_create(
+                api,
+                group=FORKLIFT_GROUP,
+                version=FORKLIFT_VERSION,
+                namespace=namespace,
+                plural="networkmaps",
+                body=nmap,
             )
             created_resources.append(("networkmaps", nmap_name))
             log.info("Created NetworkMap '%s' in '%s'", nmap_name, namespace)
@@ -463,8 +505,7 @@ def create_migration_plan(
                 datastore_ids.add(ds_id)
 
         storage_map_entries = [
-            {"source": {"id": ds_id}, "destination": {"storageClass": TARGET_STORAGE_CLASS}}
-            for ds_id in datastore_ids
+            {"source": {"id": ds_id}, "destination": {"storageClass": TARGET_STORAGE_CLASS}} for ds_id in datastore_ids
         ]
         if not storage_map_entries:
             log.error("VM '%s' has no disks with datastores", vm_name)
@@ -472,16 +513,21 @@ def create_migration_plan(
 
         smap = {
             "apiVersion": _FORKLIFT_API,
-            "kind": "StorageMap", "metadata": {"name": smap_name, "namespace": namespace},
+            "kind": "StorageMap",
+            "metadata": {"name": smap_name, "namespace": namespace},
             "spec": {
                 "provider": {"source": src_provider_ref, "destination": dst_provider_ref},
                 "map": storage_map_entries,
             },
         }
         try:
-            _k8s_create(api,
-                group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
-                namespace=namespace, plural="storagemaps", body=smap,
+            _k8s_create(
+                api,
+                group=FORKLIFT_GROUP,
+                version=FORKLIFT_VERSION,
+                namespace=namespace,
+                plural="storagemaps",
+                body=smap,
             )
             created_resources.append(("storagemaps", smap_name))
             log.info("Created StorageMap '%s' in '%s'", smap_name, namespace)
@@ -489,31 +535,52 @@ def create_migration_plan(
             if e.status == 409:
                 log.info("StorageMap '%s' already exists in '%s', reusing", smap_name, namespace)
             else:
-                log.error("Failed to create StorageMap '%s': %s. Orphaned resources: %s",
-                          smap_name, e.reason, created_resources)
-                return {"error": f"Failed to create StorageMap: {e.status} {e.reason}",
-                        "orphaned_resources": [f"{kind}/{name}" for kind, name in created_resources]}
+                log.error(
+                    "Failed to create StorageMap '%s': %s. Orphaned resources: %s",
+                    smap_name,
+                    e.reason,
+                    created_resources,
+                )
+                return {
+                    "error": f"Failed to create StorageMap: {e.status} {e.reason}",
+                    "orphaned_resources": [f"{kind}/{name}" for kind, name in created_resources],
+                }
 
         # Step 3: Create Plan
         plan_spec = {
             "provider": {"source": src_provider_ref, "destination": dst_provider_ref},
             "targetNamespace": target_namespace,
             "map": {
-                "network": {"apiVersion": _FORKLIFT_API, "kind": "NetworkMap", "name": nmap_name, "namespace": namespace},
-                "storage": {"apiVersion": _FORKLIFT_API, "kind": "StorageMap", "name": smap_name, "namespace": namespace},
+                "network": {
+                    "apiVersion": _FORKLIFT_API,
+                    "kind": "NetworkMap",
+                    "name": nmap_name,
+                    "namespace": namespace,
+                },
+                "storage": {
+                    "apiVersion": _FORKLIFT_API,
+                    "kind": "StorageMap",
+                    "name": smap_name,
+                    "namespace": namespace,
+                },
             },
             "vms": [{"id": target_vm["id"]}],
         }
 
         plan = {
             "apiVersion": _FORKLIFT_API,
-            "kind": "Plan", "metadata": {"name": plan_name, "namespace": namespace},
+            "kind": "Plan",
+            "metadata": {"name": plan_name, "namespace": namespace},
             "spec": plan_spec,
         }
         try:
-            _k8s_create(api,
-                group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
-                namespace=namespace, plural="plans", body=plan,
+            _k8s_create(
+                api,
+                group=FORKLIFT_GROUP,
+                version=FORKLIFT_VERSION,
+                namespace=namespace,
+                plural="plans",
+                body=plan,
             )
             created_resources.append(("plans", plan_name))
             log.info("Created Plan '%s' in '%s'", plan_name, namespace)
@@ -521,34 +588,48 @@ def create_migration_plan(
             if e.status == 409:
                 log.info("Plan '%s' already exists in '%s', reusing", plan_name, namespace)
             else:
-                log.error("Failed to create Plan '%s': %s. Orphaned resources: %s",
-                          plan_name, e.reason, created_resources)
-                return {"error": f"Failed to create Plan: {e.status} {e.reason}",
-                        "orphaned_resources": [f"{kind}/{name}" for kind, name in created_resources]}
+                log.error(
+                    "Failed to create Plan '%s': %s. Orphaned resources: %s", plan_name, e.reason, created_resources
+                )
+                return {
+                    "error": f"Failed to create Plan: {e.status} {e.reason}",
+                    "orphaned_resources": [f"{kind}/{name}" for kind, name in created_resources],
+                }
 
         # Step 4: Create Migration to trigger the plan
         migration_name = f"{plan_name}-migration"
         migration = {
             "apiVersion": _FORKLIFT_API,
-            "kind": "Migration", "metadata": {"name": migration_name, "namespace": namespace},
+            "kind": "Migration",
+            "metadata": {"name": migration_name, "namespace": namespace},
             "spec": {
                 "plan": {"name": plan_name, "namespace": namespace},
             },
         }
         try:
-            _k8s_create(api,
-                group=FORKLIFT_GROUP, version=FORKLIFT_VERSION,
-                namespace=namespace, plural="migrations", body=migration,
+            _k8s_create(
+                api,
+                group=FORKLIFT_GROUP,
+                version=FORKLIFT_VERSION,
+                namespace=namespace,
+                plural="migrations",
+                body=migration,
             )
             log.info("Created Migration '%s' in '%s' -- migration started", migration_name, namespace)
         except ApiException as e:
             if e.status == 409:
                 log.info("Migration '%s' already exists in '%s'", migration_name, namespace)
             else:
-                log.error("Failed to create Migration '%s': %s. Created resources: %s",
-                          migration_name, e.reason, created_resources)
-                return {"error": f"Failed to create Migration: {e.status} {e.reason}",
-                        "created_resources": [f"{kind}/{name}" for kind, name in created_resources]}
+                log.error(
+                    "Failed to create Migration '%s': %s. Created resources: %s",
+                    migration_name,
+                    e.reason,
+                    created_resources,
+                )
+                return {
+                    "error": f"Failed to create Migration: {e.status} {e.reason}",
+                    "created_resources": [f"{kind}/{name}" for kind, name in created_resources],
+                }
 
         return {
             "status": "Migration triggered",
@@ -601,8 +682,10 @@ def get_pod_logs(namespace: str, pod_pattern: str = "forklift", tail_lines: int 
             try:
                 for container in pod.spec.containers:
                     pod_log = core.read_namespaced_pod_log(
-                        name=pod_name, namespace=namespace,
-                        container=container.name, tail_lines=tail_lines,
+                        name=pod_name,
+                        namespace=namespace,
+                        container=container.name,
+                        tail_lines=tail_lines,
                     )
                     key = f"{pod_name}/{container.name}" if len(pod.spec.containers) > 1 else pod_name
                     logs[key] = pod_log

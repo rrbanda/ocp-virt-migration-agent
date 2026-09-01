@@ -243,11 +243,21 @@ def _build_workflow():
             "Always explain what you're doing. Produce structured, actionable output."
         ),
         tools=[
-            list_vmware_vms, list_migrated_vms, get_migration_status, get_vm_details,
-            migration_tool, get_pod_logs, check_cluster_readiness,
-            list_job_templates, launch_job, get_job_status, get_job_output,
-            save_report_artifact, rollback_tool,
-            search_migration_history, record_migration,
+            list_vmware_vms,
+            list_migrated_vms,
+            get_migration_status,
+            get_vm_details,
+            migration_tool,
+            get_pod_logs,
+            check_cluster_readiness,
+            list_job_templates,
+            launch_job,
+            get_job_status,
+            get_job_output,
+            save_report_artifact,
+            rollback_tool,
+            search_migration_history,
+            record_migration,
             *skill_tools,
         ],
         before_tool_callback=migration_safety_callback,
@@ -300,8 +310,8 @@ def _build_workflow():
     _pre_hint = (
         f"AAP template ID: {PRE_MIGRATION_TEMPLATE_ID}. "
         "Launch via launch_job, poll get_job_status, retrieve get_job_output. "
-        if PRE_MIGRATION_TEMPLATE_ID else
-        "No AAP configured. Assess using inventory data and skills. "
+        if PRE_MIGRATION_TEMPLATE_ID
+        else "No AAP configured. Assess using inventory data and skills. "
     )
 
     assessment_agent = LlmAgent(
@@ -345,7 +355,8 @@ def _build_workflow():
     )
 
     _post_hint = (
-        f"AAP template ID: {POST_MIGRATION_TEMPLATE_ID}. " if POST_MIGRATION_TEMPLATE_ID
+        f"AAP template ID: {POST_MIGRATION_TEMPLATE_ID}. "
+        if POST_MIGRATION_TEMPLATE_ID
         else "No AAP configured. Validate using APIs and skills. "
     )
 
@@ -449,11 +460,21 @@ def _build_single_agent() -> LlmAgent:
 
     tools = [
         *skill_tools,
-        list_vmware_vms, list_migrated_vms, get_migration_status,
-        get_vm_details, migration_tool, get_pod_logs, check_cluster_readiness,
-        list_job_templates, launch_job, get_job_status, get_job_output,
-        save_report_artifact, rollback_tool,
-        search_migration_history, record_migration,
+        list_vmware_vms,
+        list_migrated_vms,
+        get_migration_status,
+        get_vm_details,
+        migration_tool,
+        get_pod_logs,
+        check_cluster_readiness,
+        list_job_templates,
+        launch_job,
+        get_job_status,
+        get_job_output,
+        save_report_artifact,
+        rollback_tool,
+        search_migration_history,
+        record_migration,
     ]
 
     return LlmAgent(

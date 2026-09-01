@@ -44,13 +44,7 @@ def check_cluster_readiness(namespace: str = "") -> dict:
         core = virt_core_api()
         if core:
             nodes = core.list_node()
-            workers = [
-                n for n in nodes.items
-                if any(
-                    "worker" in label
-                    for label in (n.metadata.labels or {}).keys()
-                )
-            ]
+            workers = [n for n in nodes.items if any("worker" in label for label in (n.metadata.labels or {}))]
             results["checks"]["worker_nodes"] = {
                 "count": len(workers),
                 "status": "PASS" if len(workers) >= 3 else "WARNING",
@@ -66,12 +60,13 @@ def check_cluster_readiness(namespace: str = "") -> dict:
     # 2. Check storage classes
     try:
         from kubernetes import client as k8s_client
+
         storage_api = k8s_client.StorageV1Api(api_client=virt_core_api()._api_client if virt_core_api() else None)
         scs = storage_api.list_storage_class()
         sc_names = [sc.metadata.name for sc in scs.items]
         has_default = any(
-            sc.metadata.annotations and
-            sc.metadata.annotations.get("storageclass.kubernetes.io/is-default-class") == "true"
+            sc.metadata.annotations
+            and sc.metadata.annotations.get("storageclass.kubernetes.io/is-default-class") == "true"
             for sc in scs.items
         )
         results["checks"]["storage_classes"] = {
@@ -94,14 +89,13 @@ def check_cluster_readiness(namespace: str = "") -> dict:
             ns = namespace or "openshift-mtv"
             try:
                 providers = api.list_namespaced_custom_object(
-                    group="forklift.konveyor.io", version="v1beta1",
-                    namespace=ns, plural="providers",
+                    group="forklift.konveyor.io",
+                    version="v1beta1",
+                    namespace=ns,
+                    plural="providers",
                 )
                 provider_names = [p["metadata"]["name"] for p in providers.get("items", [])]
-                has_vmware = any(
-                    p.get("spec", {}).get("type") == "vsphere"
-                    for p in providers.get("items", [])
-                )
+                has_vmware = any(p.get("spec", {}).get("type") == "vsphere" for p in providers.get("items", []))
                 results["checks"]["mtv_providers"] = {
                     "count": len(provider_names),
                     "names": provider_names,

@@ -83,5 +83,5 @@ def rollback_migration(namespace: str, plan_name: str) -> dict:
         "skipped": skipped,
         "errors": errors,
         "message": f"Rollback {'complete' if not errors else 'partial'}: "
-                   f"{len(deleted)} deleted, {len(skipped)} already gone, {len(errors)} errors",
+        f"{len(deleted)} deleted, {len(skipped)} already gone, {len(errors)} errors",
     }

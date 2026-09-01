@@ -32,7 +32,8 @@ def migration_safety_callback(
     if _DRY_RUN:
         log.warning(
             "[DRY-RUN] Blocked create_migration_plan for %s/%s",
-            namespace, vm_name,
+            namespace,
+            vm_name,
         )
         return {
             "status": "dry_run",
@@ -46,6 +47,7 @@ def migration_safety_callback(
 
     log.info(
         "[APPROVED] create_migration_plan for %s/%s -- proceeding",
-        namespace, vm_name,
+        namespace,
+        vm_name,
     )
     return None

@@ -16,9 +16,7 @@ log = logging.getLogger(__name__)
 _SAFE_FILENAME = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}$")
 
 
-async def save_report_artifact(
-    report_content: str, filename: str, tool_context: ToolContext
-) -> dict:
+async def save_report_artifact(report_content: str, filename: str, tool_context: ToolContext) -> dict:
     """Save a migration report as a downloadable artifact.
 
     The report is persisted via the ADK artifact service and can be
@@ -46,9 +44,7 @@ async def save_report_artifact(
 
     try:
         artifact = types.Part.from_text(text=report_content)
-        version = await tool_context.save_artifact(
-            filename=filename, artifact=artifact
-        )
+        version = await tool_context.save_artifact(filename=filename, artifact=artifact)
         log.info("Report artifact saved: %s (version %s)", filename, version)
         return {"status": "saved", "filename": filename, "version": version}
     except Exception as e:
