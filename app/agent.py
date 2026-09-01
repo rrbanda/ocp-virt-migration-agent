@@ -149,8 +149,10 @@ log.info("Discovered %d skills from %s", len(skills), SKILLS_DIR)
 _MAX_MONITOR_POLLS = int(os.environ.get("MAX_MONITOR_POLLS", "30"))
 
 
-def intent_router(node_input: dict):
+def intent_router(node_input=None):
     """Route dispatcher output: pipeline, batch, or done (ad-hoc answer)."""
+    if node_input is None:
+        return Event(route="done", output="")
     text = str(node_input.get("action", node_input) if isinstance(node_input, dict) else node_input).upper()
     if "PIPELINE" in text or "FULL MIGRATION" in text or "RUN MIGRATION" in text:
         return Event(route="pipeline", output=node_input)
@@ -159,8 +161,10 @@ def intent_router(node_input: dict):
     return Event(route="done", output=node_input)
 
 
-def readiness_router(node_input: dict):
+def readiness_router(node_input=None):
     """Deterministic: skip migration if assessment says NOT READY."""
+    if node_input is None:
+        return Event(route="not_ready", output="No assessment data")
     text = str(node_input.get("verdict", node_input) if isinstance(node_input, dict) else node_input)
     if "NOT READY" in text.upper():
         log.info("[Router] NOT READY -- skipping to report")
@@ -194,9 +198,11 @@ def approval_router(node_input):
     return Event(route="rejected", output=node_input)
 
 
-def monitor_router(ctx: Context, node_input: dict):
+def monitor_router(ctx: Context, node_input=None):
     """Route monitor loop: completed/failed/running. Per-session poll counter via ctx.state."""
     count = ctx.state.get("temp:monitor_poll_count", 0) + 1
+    if node_input is None:
+        node_input = ""
     status = str(node_input.get("status", node_input) if isinstance(node_input, dict) else node_input)
     if any(kw in status for kw in ("Failed", "Error", "Canceled", "Cancelled")):
         log.info("[Router] Migration FAILED")
