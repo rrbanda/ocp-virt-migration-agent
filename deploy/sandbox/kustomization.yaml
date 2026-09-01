@@ -4,6 +4,7 @@ kind: Kustomization
 namespace: ocp-virt-agent
 
 resources:
+  - serviceaccount.yaml
   - sandbox.yaml
   - startup.yaml
   - service.yaml
