@@ -23,17 +23,37 @@ class TestIntentRouter:
         result = intent_router({"action": "RUN MIGRATION for database-user1"})
         assert result.actions.route == "pipeline"
 
-    def test_batch_keyword(self):
-        from app.agent import intent_router
-
-        result = intent_router({"action": "BATCH: 10 RHEL 8 VMs"})
-        assert result.actions.route == "batch"
-
     def test_adhoc_query(self):
         from app.agent import intent_router
 
         result = intent_router({"action": "Here are the VMware VMs found in mtv-user1..."})
         assert result.actions.route == "done"
+
+    def test_batch_text_routes_to_done(self):
+        from app.agent import intent_router
+
+        result = intent_router({"action": "BATCH: 10 RHEL 8 VMs"})
+        assert result.actions.route == "done"
+
+    def test_none_input(self):
+        from app.agent import intent_router
+
+        result = intent_router(None)
+        assert result.actions.route == "done"
+
+
+class TestDonePassthrough:
+    def test_returns_input(self):
+        from app.agent import done_passthrough
+
+        result = done_passthrough("some ad-hoc answer")
+        assert result.output == "some ad-hoc answer"
+
+    def test_none_input(self):
+        from app.agent import done_passthrough
+
+        result = done_passthrough(None)
+        assert result.output == ""
 
 
 class TestReadinessRouter:
@@ -72,39 +92,39 @@ class TestApprovalRouter:
             assert result.actions.route == "rejected", f"'{word}' should reject"
 
 
-class TestMonitorRouter:
+class TestOutcomeRouter:
     def test_completed(self):
-        from app.agent import monitor_router
+        from app.agent import outcome_router
 
         ctx = _mock_ctx({"temp:monitor_poll_count": 0})
-        result = monitor_router(ctx, {"status": "Phase: Completed, all VMs migrated"})
-        assert result.actions.route == "completed"
+        result = outcome_router(ctx, {"status": "Phase: Completed, all VMs migrated"})
+        assert result.actions.route == "terminal"
 
     def test_failed(self):
-        from app.agent import monitor_router
+        from app.agent import outcome_router
 
         ctx = _mock_ctx({"temp:monitor_poll_count": 0})
-        result = monitor_router(ctx, {"status": "Phase: Failed, 2 VMs failed"})
-        assert result.actions.route == "failed"
+        result = outcome_router(ctx, {"status": "Phase: Failed, 2 VMs failed"})
+        assert result.actions.route == "terminal"
 
     def test_running(self):
-        from app.agent import monitor_router
+        from app.agent import outcome_router
 
         ctx = _mock_ctx({"temp:monitor_poll_count": 0})
-        result = monitor_router(ctx, {"status": "Phase: Running, 2 of 5 VMs completed"})
+        result = outcome_router(ctx, {"status": "Phase: Running, 2 of 5 VMs completed"})
         assert result.actions.route == "running"
 
     def test_empty(self):
-        from app.agent import monitor_router
+        from app.agent import outcome_router
 
         ctx = _mock_ctx({"temp:monitor_poll_count": 0})
-        result = monitor_router(ctx, {"status": ""})
+        result = outcome_router(ctx, {"status": ""})
         assert result.actions.route == "running"
 
     def test_timeout_after_max_polls(self):
-        from app.agent import _MAX_MONITOR_POLLS, monitor_router
+        from app.agent import _MAX_MONITOR_POLLS, outcome_router
 
         ctx = _mock_ctx({"temp:monitor_poll_count": _MAX_MONITOR_POLLS - 1})
-        result = monitor_router(ctx, {"status": "Still running"})
-        assert result.actions.route == "failed"
+        result = outcome_router(ctx, {"status": "Still running"})
+        assert result.actions.route == "terminal"
         assert "timeout" in str(result.output).lower()

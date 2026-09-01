@@ -47,6 +47,8 @@ def known_tools() -> list[str]:
         "get_migration_status",
         "get_vm_details",
         "create_migration_plan",
+        "execute_migration",
+        "validate_migrated_vm",
         "get_pod_logs",
         "check_cluster_readiness",
         "rollback_migration",

@@ -1,8 +1,9 @@
 """Safety callbacks for the migration agent.
 
 Provides a before_tool_callback that enforces the dry-run guardrail on
-``create_migration_plan``.  The readiness gate (NOT READY check) is
-handled deterministically by the graph readiness_router node.
+destructive tools (create_migration_plan, execute_migration, rollback_migration).
+The readiness gate (NOT READY check) is handled deterministically by the
+graph readiness_router node.
 
 All migration tool invocations are logged for audit purposes.
 """
@@ -16,6 +17,12 @@ log = logging.getLogger(__name__)
 
 _DRY_RUN = os.environ.get("MIGRATION_DRY_RUN", "false").lower() == "true"
 
+_DESTRUCTIVE_TOOLS = frozenset({
+    "create_migration_plan",
+    "execute_migration",
+    "rollback_migration",
+})
+
 
 async def migration_safety_callback(
     tool: BaseTool,
@@ -23,31 +30,34 @@ async def migration_safety_callback(
     tool_context: ToolContext,
 ) -> dict | None:
     """Intercept destructive migration tools with the dry-run gate."""
-    if tool.name != "create_migration_plan":
+    if tool.name not in _DESTRUCTIVE_TOOLS:
         return None
 
     namespace = args.get("namespace", "")
-    vm_name = args.get("vm_name", "")
+    identifier = args.get("vm_name", "") or args.get("plan_name", "")
 
     if _DRY_RUN:
         log.warning(
-            "[DRY-RUN] Blocked create_migration_plan for %s/%s",
+            "[DRY-RUN] Blocked %s for %s/%s",
+            tool.name,
             namespace,
-            vm_name,
+            identifier,
         )
         return {
             "status": "dry_run",
-            "vm_name": vm_name,
+            "tool": tool.name,
             "namespace": namespace,
+            "identifier": identifier,
             "message": (
-                f"Migration of '{vm_name}' was NOT executed because MIGRATION_DRY_RUN "
+                f"Tool '{tool.name}' was NOT executed because MIGRATION_DRY_RUN "
                 "is enabled. Disable dry-run mode to proceed."
             ),
         }
 
     log.info(
-        "[APPROVED] create_migration_plan for %s/%s -- proceeding",
+        "[APPROVED] %s for %s/%s -- proceeding",
+        tool.name,
         namespace,
-        vm_name,
+        identifier,
     )
     return None

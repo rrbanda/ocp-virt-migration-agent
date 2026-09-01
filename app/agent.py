@@ -1,30 +1,33 @@
-"""OCP Virt Migration Agent -- ADK 2.0 Hybrid Workflow.
+"""OCP Virt Migration Agent -- ADK 2.0 Simplified Workflow.
 
-Uses an ADK 2.0 Workflow graph with a dispatcher-first pattern:
+Architecture modeled after Google's official ADK samples:
+  - Ambient Expense Agent (graph + HITL + conditional routing)
+  - Small Business Loan Agent (orchestrator + specialized sub-agents)
 
-  MigrationWorkflow (Workflow -- root_agent via node= param)
-    START -> Dispatcher (LlmAgent with ALL tools + skills)
+4 agents instead of 10, each doing meaningful LLM work:
+
+  MigrationWorkflow (Workflow)
+    START -> Coordinator (all tools + skills, handles ~93% ad-hoc queries)
           -> intent_router
-               ├── "done"     -> DoneAgent (summarize ad-hoc result)
-               ├── "pipeline" -> DiscoveryAgent -> AssessmentAgent
-               │                   -> readiness_router
-               │                       ├── "ready"     -> HITL approval -> approval_router
-               │                       │                    ├── "approved" -> MigrationAgent -> StatusPoller
-               │                       │                    │                   -> monitor_router
-               │                       │                    │                       ├── "completed" -> ValidationAgent -> ReporterAgent
-               │                       │                    │                       ├── "failed"    -> RollbackAgent -> ReporterAgent
-               │                       │                    │                       └── "running"   -> StatusPoller (loop)
-               │                       │                    └── "rejected" -> ReporterAgent
-               │                       └── "not_ready" -> ReporterAgent
-               └── "batch"    -> BatchPlannerAgent -> DiscoveryAgent (same pipeline)
+               ├── "done"     -> END (Coordinator already answered)
+               └── "pipeline" -> PreMigrationAgent (discover + assess + create plan)
+                                   -> readiness_router
+                                       ├── "ready" -> HITL approval -> approval_router
+                                       │                ├── "approved" -> ExecutionAgent (execute + monitor)
+                                       │                │                   -> outcome_router
+                                       │                │                       ├── "terminal" -> PostMigrationAgent
+                                       │                │                       └── "running"  -> ExecutionAgent (loop)
+                                       │                └── "rejected" -> PostMigrationAgent (rejection report)
+                                       └── "not_ready" -> PostMigrationAgent (assessment report)
 
 ADK 2.0 features:
-  - Workflow graph with conditional edges and HITL
+  - Workflow graph with conditional edges, HITL, and monitor loop
   - RunConfig with max_llm_calls safety limit
   - EventsCompactionConfig for context summarization
-  - FunctionTool(require_confirmation=True) for migration approval
+  - FunctionTool(require_confirmation=True) for destructive operations
   - MigrationLoggingPlugin for structured observability (via App.plugins)
   - MLflow tracing for tool + LLM call spans
+  - ConfigMap-driven agent instructions and model tiers
 
 Set AGENT_MODE=single to fall back to the legacy monolithic agent.
 """
@@ -234,15 +237,18 @@ _MAX_MONITOR_POLLS = int(os.environ.get("MAX_MONITOR_POLLS", "30"))
 
 
 def intent_router(node_input=None):
-    """Route dispatcher output: pipeline, batch, or done (ad-hoc answer)."""
+    """Route coordinator output: pipeline (full migration) or done (ad-hoc answer)."""
     if node_input is None:
         return Event(route="done", output="")
     text = str(node_input.get("action", node_input) if isinstance(node_input, dict) else node_input).upper()
     if "PIPELINE" in text or "FULL MIGRATION" in text or "RUN MIGRATION" in text:
         return Event(route="pipeline", output=node_input)
-    if "BATCH" in text or "MULTIPLE VMS" in text:
-        return Event(route="batch", output=node_input)
     return Event(route="done", output=node_input)
+
+
+def done_passthrough(node_input=None):
+    """Terminal node -- Coordinator already answered the ad-hoc query."""
+    return Event(output=node_input or "")
 
 
 def readiness_router(node_input=None):
@@ -282,22 +288,28 @@ def approval_router(node_input):
     return Event(route="rejected", output=node_input)
 
 
-def monitor_router(ctx: Context, node_input=None):
-    """Route monitor loop: completed/failed/running. Per-session poll counter via ctx.state."""
+def outcome_router(ctx: Context, node_input=None):
+    """Route execution result: terminal (completed/failed) or running (loop).
+
+    Uses a single 'terminal' route for both completed and failed because the
+    ADK Workflow graph does not allow duplicate from->to edges.
+    PostMigrationAgent determines the action (validate vs rollback) from the
+    execution_status content.
+    """
     count = ctx.state.get("temp:monitor_poll_count", 0) + 1
     if node_input is None:
         node_input = ""
     status = str(node_input.get("status", node_input) if isinstance(node_input, dict) else node_input)
     if any(kw in status for kw in ("Failed", "Error", "Canceled", "Cancelled")):
-        log.info("[Router] Migration FAILED")
-        return Event(route="failed", output=status, state={"temp:monitor_poll_count": 0})
+        log.info("[Router] Migration FAILED -> terminal")
+        return Event(route="terminal", output=status, state={"temp:monitor_poll_count": 0})
     if any(kw in status for kw in ("Completed", "Succeeded")):
-        log.info("[Router] Migration COMPLETED")
-        return Event(route="completed", output=status, state={"temp:monitor_poll_count": 0})
+        log.info("[Router] Migration COMPLETED -> terminal")
+        return Event(route="terminal", output=status, state={"temp:monitor_poll_count": 0})
     if count >= _MAX_MONITOR_POLLS:
         log.warning("[Router] Monitor poll limit reached (%d), treating as failed", _MAX_MONITOR_POLLS)
         return Event(
-            route="failed",
+            route="terminal",
             output=f"{status} (monitor timeout after {_MAX_MONITOR_POLLS} polls)",
             state={"temp:monitor_poll_count": 0},
         )
@@ -309,19 +321,21 @@ def monitor_router(ctx: Context, node_input=None):
 # Build the Hybrid Workflow graph
 # ---------------------------------------------------------------------------
 def _build_workflow():
-    """Build the ADK 2.0 Hybrid Workflow graph."""
+    """Build the ADK 2.0 Simplified Workflow graph (4 agents)."""
     _load_agent_config()
     skill_tools = [SkillToolset(skills=skills)] if skills else []
-    migration_tool = FunctionTool(create_migration_plan, require_confirmation=True)
-    rollback_tool = FunctionTool(rollback_migration, require_confirmation=True)
 
-    # -- Dispatcher: handles ad-hoc queries with all tools -----------------
-    dispatcher = LlmAgent(
-        name="Dispatcher",
-        model=_get_agent_model("Dispatcher", "reasoning"),
+    # Confirmation-gated tools for the Coordinator (ad-hoc safety)
+    migration_plan_tool = FunctionTool(create_migration_plan, require_confirmation=True)
+    coord_rollback_tool = FunctionTool(rollback_migration, require_confirmation=True)
+
+    # -- Coordinator: handles ad-hoc queries + dispatches pipeline ---------
+    coordinator = LlmAgent(
+        name="Coordinator",
+        model=_get_agent_model("Coordinator", "reasoning"),
         generate_content_config=genai_types.GenerateContentConfig(temperature=0.2),
         instruction=_get_agent_instruction(
-            "Dispatcher",
+            "Coordinator",
             "You are the Migration Coordinator. Use tools and skills to help with VMware-to-OCP Virt migrations.",
         ),
         tools=[
@@ -329,7 +343,7 @@ def _build_workflow():
             list_migrated_vms,
             get_migration_status,
             get_vm_details,
-            migration_tool,
+            migration_plan_tool,
             get_pod_logs,
             check_cluster_readiness,
             list_job_templates,
@@ -337,7 +351,7 @@ def _build_workflow():
             get_job_status,
             get_job_output,
             save_report_artifact,
-            rollback_tool,
+            coord_rollback_tool,
             execute_migration,
             validate_migrated_vm,
             search_migration_history,
@@ -347,122 +361,91 @@ def _build_workflow():
         before_tool_callback=migration_safety_callback,
         output_key="dispatch_result",
     )
-    # -- Done: summarizes ad-hoc results -----------------------------------
-    done_agent = LlmAgent(
-        name="DoneAgent",
-        model=_get_agent_model("DoneAgent", "fast"),
+
+    # -- PreMigrationAgent: discovery + assessment + plan creation ----------
+    pre_migration_agent = LlmAgent(
+        name="PreMigrationAgent",
+        model=_get_agent_model("PreMigrationAgent", "reasoning"),
         instruction=_get_agent_instruction(
-            "DoneAgent", "Summarize the dispatcher's result for the user in a clear, helpful format."
-        ),
-        output_key="final_answer",
-    )
-    # -- Batch planner: plans multi-VM migrations --------------------------
-    batch_planner = LlmAgent(
-        name="BatchPlannerAgent",
-        model=_get_agent_model("BatchPlannerAgent", "reasoning"),
-        instruction=_get_agent_instruction(
-            "BatchPlannerAgent", "Load batch-planner, risk-assessor, capacity-analyzer skills."
-        ),
-        tools=[list_vmware_vms, *skill_tools],
-        output_key="batch_plan",
-    )
-    # -- Pipeline agents ---------------------------------------------------
-    discovery_agent = LlmAgent(
-        name="DiscoveryAgent",
-        model=_get_agent_model("DiscoveryAgent", "fast"),
-        instruction=_get_agent_instruction(
-            "DiscoveryAgent",
-            f"Load migration-workflow skill Phase 1. Call list_vmware_vms (namespace: {DEFAULT_MTV_NAMESPACE}).",
-        ),
-        tools=[list_vmware_vms],
-        output_key="vm_inventory",
-    )
-    assessment_agent = LlmAgent(
-        name="AssessmentAgent",
-        model=_get_agent_model("AssessmentAgent", "reasoning"),
-        instruction=_get_agent_instruction("AssessmentAgent", "Load pre-migration-analyzer and risk-assessor skills."),
-        tools=[launch_job, get_job_status, get_job_output, *skill_tools],
-        output_key="readiness_verdict",
-    )
-    execute_tool = FunctionTool(execute_migration, require_confirmation=True)
-    migration_agent = LlmAgent(
-        name="MigrationAgent",
-        model=_get_agent_model("MigrationAgent", "fast"),
-        instruction=_get_agent_instruction(
-            "MigrationAgent", "Load migration-workflow skill Phase 4. Call execute_migration."
-        ),
-        tools=[execute_tool],
-        before_tool_callback=migration_safety_callback,
-        output_key="migration_id",
-    )
-    monitor_poller = LlmAgent(
-        name="StatusPoller",
-        model=_get_agent_model("StatusPoller", "fast"),
-        instruction=_get_agent_instruction(
-            "StatusPoller", "Load migration-workflow skill Phase 5. Call get_migration_status."
-        ),
-        tools=[get_migration_status, get_pod_logs, *skill_tools],
-        output_key="migration_status",
-    )
-    validation_agent = LlmAgent(
-        name="ValidationAgent",
-        model=_get_agent_model("ValidationAgent", "reasoning"),
-        instruction=_get_agent_instruction(
-            "ValidationAgent", "Load post-migration-validator skill. Call validate_migrated_vm."
+            "PreMigrationAgent",
+            (
+                "Load migration-workflow skill. Execute Phases 1-3: "
+                "discover VMs via list_vmware_vms, assess readiness, "
+                "then create the migration plan via create_migration_plan."
+            ),
         ),
         tools=[
-            validate_migrated_vm,
-            list_migrated_vms,
+            list_vmware_vms,
             get_vm_details,
+            check_cluster_readiness,
+            create_migration_plan,
             launch_job,
             get_job_status,
             get_job_output,
             *skill_tools,
         ],
-        output_key="validation_result",
+        output_key="pre_migration_result",
     )
-    rollback_agent = LlmAgent(
-        name="RollbackAgent",
-        model=_get_agent_model("RollbackAgent", "fast"),
+
+    # -- ExecutionAgent: execute migration + monitor status -----------------
+    execute_tool = FunctionTool(execute_migration, require_confirmation=True)
+    execution_agent = LlmAgent(
+        name="ExecutionAgent",
+        model=_get_agent_model("ExecutionAgent", "fast"),
         instruction=_get_agent_instruction(
-            "RollbackAgent", "Load migration-workflow skill. Call rollback_migration and record_migration."
+            "ExecutionAgent",
+            (
+                "Load migration-workflow skill Phases 4-5. "
+                "Call execute_migration to start, then get_migration_status to check progress."
+            ),
         ),
-        tools=[rollback_tool, record_migration],
-        output_key="rollback_result",
+        tools=[execute_tool, get_migration_status, get_pod_logs, *skill_tools],
+        before_tool_callback=migration_safety_callback,
+        output_key="execution_status",
     )
-    reporter_agent = LlmAgent(
-        name="ReporterAgent",
-        model=_get_agent_model("ReporterAgent", "reasoning"),
+
+    # -- PostMigrationAgent: validate OR rollback, then report -------------
+    post_rollback_tool = FunctionTool(rollback_migration, require_confirmation=True)
+    post_migration_agent = LlmAgent(
+        name="PostMigrationAgent",
+        model=_get_agent_model("PostMigrationAgent", "reasoning"),
         instruction=_get_agent_instruction(
-            "ReporterAgent", "Load completion-report-generator skill. Call save_report_artifact."
+            "PostMigrationAgent",
+            (
+                "Load post-migration-validator and completion-report-generator skills. "
+                "If migration succeeded: validate and generate completion report. "
+                "If migration failed: rollback and generate failure report. "
+                "If migration was rejected or not ready: generate assessment-only report."
+            ),
         ),
-        tools=[save_report_artifact, record_migration, *skill_tools],
+        tools=[
+            validate_migrated_vm,
+            list_migrated_vms,
+            get_vm_details,
+            post_rollback_tool,
+            save_report_artifact,
+            record_migration,
+            launch_job,
+            get_job_status,
+            get_job_output,
+            *skill_tools,
+        ],
         output_key="final_report",
     )
-    # -- Workflow graph ----------------------------------------------------
+
+    # -- Workflow graph (9 edges, 4 agents) --------------------------------
     workflow = Workflow(
         name=AGENT_NAME,
         description=AGENT_DESC,
         edges=[
-            # Dispatcher handles all queries, router decides next step
-            ("START", dispatcher, intent_router),
-            # Ad-hoc queries go to done
-            (intent_router, {"done": done_agent, "pipeline": discovery_agent, "batch": batch_planner}),
-            # Batch planning feeds into the same pipeline
-            (batch_planner, discovery_agent),
-            # Pipeline: discovery -> assessment -> readiness check
-            (discovery_agent, assessment_agent, readiness_router),
-            (readiness_router, {"ready": migration_approval, "not_ready": reporter_agent}),
-            # HITL approval
+            ("START", coordinator, intent_router),
+            (intent_router, {"done": done_passthrough, "pipeline": pre_migration_agent}),
+            (pre_migration_agent, readiness_router),
+            (readiness_router, {"ready": migration_approval, "not_ready": post_migration_agent}),
             (migration_approval, approval_router),
-            (approval_router, {"approved": migration_agent, "rejected": reporter_agent}),
-            # Migration -> monitoring loop
-            (migration_agent, monitor_poller, monitor_router),
-            (monitor_router, {"completed": validation_agent, "failed": rollback_agent, "running": monitor_poller}),
-            # Validation -> report
-            (validation_agent, reporter_agent),
-            # Rollback -> report
-            (rollback_agent, reporter_agent),
+            (approval_router, {"approved": execution_agent, "rejected": post_migration_agent}),
+            (execution_agent, outcome_router),
+            (outcome_router, {"terminal": post_migration_agent, "running": execution_agent}),
         ],
     )
     return workflow

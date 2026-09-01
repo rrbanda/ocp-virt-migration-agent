@@ -87,46 +87,43 @@ graph LR
 
 ## 2. Multi-Agent Pipeline Architecture
 
-The agent uses Google ADK's multi-agent framework with a 6-phase sequential pipeline.
+The agent uses an ADK 2.0 Workflow graph with 4 specialized agents, modeled after Google's official [Ambient Expense Agent](https://github.com/google/adk-samples/tree/main/python/agents/ambient-expense-agent) (graph + HITL) and [Small Business Loan Agent](https://github.com/google/adk-samples/tree/main/python/agents/small-business-loan-agent) (orchestrator + sub-agents).
 
 ![Agent Pipeline](images/02-agent-pipeline.png)
 
-**Source**: [`agent/app/agent.py`](../agent/app/agent.py) `_build_pipeline_agent()` (lines 128-350)
+**Source**: [`app/agent.py`](../app/agent.py) `_build_workflow()`
 
-When `AGENT_MODE=pipeline` (default), the root agent is a **coordinator** (`LlmAgent`) that delegates full migration workflows to a **`MigrationPipeline`** (`SequentialAgent`) containing 6 phases:
+When `AGENT_MODE=pipeline` (default), the root agent is an ADK 2.0 **Workflow** graph with code-controlled edges, conditional routing, a monitoring loop, and native HITL:
 
-| Phase | Agent | Type | `output_key` | Tools |
-|---|---|---|---|---|
-| 1 | `DiscoveryAgent` | LlmAgent | `vm_inventory` | `list_vmware_vms` |
-| 2 | `AssessmentAgent` | LlmAgent | `readiness_verdict` | `launch_job`, `get_job_status`, `get_job_output`, SkillToolset |
-| 3 | `MigrationAgent` | LlmAgent | `migration_id` | `create_migration_plan` |
-| 4 | `MigrationMonitor` | LoopAgent | -- | (contains StatusPoller + StatusChecker) |
-| 4a | `StatusPoller` | LlmAgent | `migration_status` | `get_migration_status`, `get_pod_logs`, SkillToolset |
-| 4b | `StatusChecker` | BaseAgent | -- | (deterministic: checks terminal keywords, escalates) |
-| 5 | `ValidationAgent` | LlmAgent | `validation_result` | `list_migrated_vms`, `get_vm_details`, `launch_job`, `get_job_status`, `get_job_output`, SkillToolset |
-| 6 | `ReporterAgent` | LlmAgent | `final_report` | `save_report_artifact`, SkillToolset |
+| Agent | `output_key` | Model Tier | Tools |
+|---|---|---|---|
+| `Coordinator` | `dispatch_result` | reasoning | ALL tools + SkillToolset (handles ad-hoc queries + dispatches pipeline) |
+| `PreMigrationAgent` | `pre_migration_result` | reasoning | `list_vmware_vms`, `get_vm_details`, `check_cluster_readiness`, `create_migration_plan`, `launch_job`, `get_job_status`, `get_job_output`, SkillToolset |
+| `ExecutionAgent` | `execution_status` | fast | `execute_migration`, `get_migration_status`, `get_pod_logs`, SkillToolset |
+| `PostMigrationAgent` | `final_report` | reasoning | `validate_migrated_vm`, `list_migrated_vms`, `get_vm_details`, `rollback_migration`, `save_report_artifact`, `record_migration`, `launch_job`, `get_job_status`, `get_job_output`, SkillToolset |
 
-The **coordinator** also has all tools directly for ad-hoc queries (list VMs, check status, etc.) without running the full pipeline.
+The **Coordinator** handles ~93% of interactions (ad-hoc queries) directly. Only explicit migration requests trigger the pipeline.
 
-When `AGENT_MODE=single`, a single monolithic `LlmAgent` with all tools replaces the pipeline.
+When `AGENT_MODE=single`, a single monolithic `LlmAgent` with all tools replaces the graph.
 
 <details>
 <summary>Mermaid source (editable)</summary>
 
 ```mermaid
 graph TD
-    Coordinator["migration_coordinator LlmAgent"]
-    Coordinator --> Pipeline["MigrationPipeline SequentialAgent"]
-
-    Pipeline --> Discovery["DiscoveryAgent output_key: vm_inventory"]
-    Pipeline --> Assessment["AssessmentAgent output_key: readiness_verdict"]
-    Pipeline --> Migration["MigrationAgent output_key: migration_id"]
-    Pipeline --> Monitor["MigrationMonitor LoopAgent"]
-    Pipeline --> Validation["ValidationAgent output_key: validation_result"]
-    Pipeline --> Reporter["ReporterAgent output_key: final_report"]
-
-    Monitor --> Poller["StatusPoller output_key: migration_status"]
-    Monitor --> Checker["StatusChecker BaseAgent"]
+    START --> Coordinator["Coordinator (reasoning)"]
+    Coordinator --> IR{intent_router}
+    IR -->|done| DONE["done_passthrough (END)"]
+    IR -->|pipeline| PreMig["PreMigrationAgent (reasoning)"]
+    PreMig --> RR{readiness_router}
+    RR -->|not_ready| PostMig["PostMigrationAgent (reasoning)"]
+    RR -->|ready| HITL["migration_approval (HITL)"]
+    HITL --> AR{approval_router}
+    AR -->|rejected| PostMig
+    AR -->|approved| Exec["ExecutionAgent (fast)"]
+    Exec --> OR{outcome_router}
+    OR -->|terminal| PostMig
+    OR -->|running| Exec
 ```
 
 </details>
@@ -221,55 +218,48 @@ graph LR
 
 ## 4. Tool and Skill Access Matrix
 
-Which tools and skills are available to each agent in the pipeline.
+Which tools and skills are available to each agent in the workflow.
 
 ![Tool and Skill Access Matrix](images/04-tool-skill-map.png)
 
-**Source**: [`agent/app/agent.py`](../agent/app/agent.py) tool lists per agent
+**Source**: [`app/agent.py`](../app/agent.py) tool lists per agent
 
-| Agent | list_vmware_vms | list_migrated_vms | get_migration_status | get_vm_details | create_migration_plan | get_pod_logs | list_job_templates | launch_job | get_job_status | get_job_output | save_report_artifact | SkillToolset |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Coordinator** | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| DiscoveryAgent | Y | | | | | | | | | | | |
-| AssessmentAgent | | | | | | | | Y | Y | Y | | Y |
-| MigrationAgent | | | | | Y | | | | | | | |
-| StatusPoller | | | Y | | | Y | | | | | | Y |
-| ValidationAgent | | Y | | Y | | | | Y | Y | Y | | Y |
-| ReporterAgent | | | | | | | | | | | Y | Y |
+| Agent | list_vmware_vms | list_migrated_vms | get_migration_status | get_vm_details | create_migration_plan | execute_migration | validate_migrated_vm | get_pod_logs | rollback_migration | launch_job | get_job_status | get_job_output | save_report_artifact | record_migration | SkillToolset |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Coordinator** | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| **PreMigrationAgent** | Y | | | Y | Y | | | | | Y | Y | Y | | | Y |
+| **ExecutionAgent** | | | Y | | | Y | | Y | | | | | | | Y |
+| **PostMigrationAgent** | | Y | | Y | | | Y | | Y | Y | Y | Y | Y | Y | Y |
 
-The **SkillToolset** gives access to all 11 skills via `list_skills`, `load_skill`, and `load_skill_resource`. Note: SkillToolset is only included when skills are discovered at startup (`skills = _discover_skills(SKILLS_DIR)` in `agent.py` line 105). If `/skills` is empty or missing, agents marked Y for SkillToolset will have no skill tools at runtime.
+The **SkillToolset** gives access to all 17 skills via `list_skills`, `load_skill`, and `load_skill_resource`. SkillToolset is only included when skills are discovered at startup. If `/skills` is empty or missing, agents will have no skill tools at runtime.
 
 ---
 
 ## 5. Data Flow Through the Pipeline
 
-How session state accumulates as data flows through each phase.
+How session state accumulates as data flows through the workflow graph.
 
 ![Data Flow](images/05-data-flow.png)
 
-**Source**: `output_key=` on each agent in [`agent/app/agent.py`](../agent/app/agent.py)
+**Source**: `output_key=` on each agent in [`app/agent.py`](../app/agent.py)
 
-Each phase writes its output to a session state key. Subsequent phases read from prior keys:
+Each agent writes its output to a session state key. Subsequent agents read from prior keys:
 
-| Phase | Agent | Writes | Reads |
-|---|---|---|---|
-| 1 | DiscoveryAgent | `vm_inventory` | (user request) |
-| 2 | AssessmentAgent | `readiness_verdict` | `vm_inventory` |
-| 3 | MigrationAgent | `migration_id` | `readiness_verdict`, `vm_inventory` |
-| 4 | StatusPoller (inside MigrationMonitor) | `migration_status` | `migration_id` |
-| 5 | ValidationAgent | `validation_result` | `migration_status`, `vm_inventory` |
-| 6 | ReporterAgent | `final_report` | all prior keys |
+| Agent | Writes | Reads |
+|---|---|---|
+| Coordinator | `dispatch_result` | (user request) |
+| PreMigrationAgent | `pre_migration_result` | `dispatch_result` (pipeline context) |
+| ExecutionAgent | `execution_status` | `pre_migration_result` |
+| PostMigrationAgent | `final_report` | all prior keys |
 
 ### Session State Key Payloads
 
 | Key | Content |
 |---|---|
-| `vm_inventory` | JSON: VM names, CPU, memory, disk, OS, power state, firmware from VMware |
-| `readiness_verdict` | READY / NOT READY / READY WITH WARNINGS + risk rating + blockers + warnings |
-| `migration_id` | Plan name, migration name, target namespace |
-| `migration_status` | Phase, VMs completed/running/failed, error details |
-| `validation_result` | PASS/FAIL + before/after comparison (CPU, memory, network) |
-| `final_report` | Markdown migration completion report (saved as artifact) |
+| `dispatch_result` | Ad-hoc answer OR "PIPELINE: vm_name in namespace" trigger |
+| `pre_migration_result` | VM inventory + readiness verdict + migration plan details (READY/NOT READY) |
+| `execution_status` | Migration status: running / completed / failed with details |
+| `final_report` | Markdown report: validation results OR rollback details OR assessment-only |
 
 <details>
 <summary>Mermaid source (editable)</summary>
@@ -277,41 +267,36 @@ Each phase writes its output to a session state key. Subsequent phases read from
 ```mermaid
 sequenceDiagram
     participant User
-    participant Coordinator as migration_coordinator
-    participant D as DiscoveryAgent
-    participant A as AssessmentAgent
-    participant M as MigrationAgent
-    participant Mon as MigrationMonitor
-    participant V as ValidationAgent
-    participant R as ReporterAgent
+    participant C as Coordinator
+    participant PM as PreMigrationAgent
+    participant HITL as migration_approval
+    participant E as ExecutionAgent
+    participant Post as PostMigrationAgent
 
-    User->>Coordinator: Migrate VM X
-    Coordinator->>D: Delegate to MigrationPipeline
-    D->>D: list_vmware_vms()
-    Note right of D: state.vm_inventory
+    User->>C: Migrate VM X
+    C->>C: Routes to pipeline
+    Note right of C: state.dispatch_result
 
-    D->>A: next phase
-    A->>A: launch_job() + parse output
-    Note right of A: state.readiness_verdict
+    C->>PM: intent_router -> pipeline
+    PM->>PM: list_vmware_vms() + assess + create_migration_plan()
+    Note right of PM: state.pre_migration_result
 
-    A->>M: next phase
-    M->>M: create_migration_plan()
-    Note right of M: state.migration_id
+    PM->>HITL: readiness_router -> ready
+    HITL->>User: "Do you approve this migration?"
+    User->>HITL: "yes"
 
-    M->>Mon: next phase
-    loop Until terminal
-        Mon->>Mon: get_migration_status()
-        Note right of Mon: state.migration_status
+    HITL->>E: approval_router -> approved
+    E->>E: execute_migration() + get_migration_status()
+    Note right of E: state.execution_status
+
+    loop outcome_router -> running
+        E->>E: get_migration_status()
     end
 
-    Mon->>V: next phase
-    V->>V: list_migrated_vms() + get_vm_details()
-    Note right of V: state.validation_result
-
-    V->>R: next phase
-    R->>R: save_report_artifact()
-    Note right of R: state.final_report
-    R->>User: Migration complete + report
+    E->>Post: outcome_router -> completed
+    Post->>Post: validate_migrated_vm() + save_report_artifact()
+    Note right of Post: state.final_report
+    Post->>User: Migration complete + report
 ```
 
 </details>

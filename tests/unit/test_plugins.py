@@ -87,7 +87,7 @@ class TestPluginBehavior:
     @pytest.mark.asyncio
     async def test_before_agent_returns_none(self, plugin, mock_callback_context):
         agent = MagicMock()
-        agent.name = "Dispatcher"
+        agent.name = "Coordinator"
         result = await plugin.before_agent_callback(
             callback_context=mock_callback_context,
             agent=agent,

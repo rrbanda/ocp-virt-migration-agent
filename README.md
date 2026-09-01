@@ -22,25 +22,41 @@ For detailed architecture documentation with 5 diagrams (deployment, agent pipel
 
 ### Multi-Agent Pipeline (AGENT_MODE=pipeline)
 
+Architecture modeled after Google's official ADK 2.0 samples ([Ambient Expense Agent](https://github.com/google/adk-samples/tree/main/python/agents/ambient-expense-agent), [Small Business Loan Agent](https://github.com/google/adk-samples/tree/main/python/agents/small-business-loan-agent)).
+
 ```
-Coordinator (root_agent, LlmAgent)
-  ├── MigrationPipeline (SequentialAgent)
-  │     ├── DiscoveryAgent      -> list VMware VMs
-  │     ├── AssessmentAgent     -> run pre-migration checks, produce readiness report
-  │     ├── MigrationAgent      -> trigger MTV migration (with HITL confirmation)
-  │     ├── MigrationMonitor    -> poll status until complete (LoopAgent)
-  │     ├── ValidationAgent     -> run post-migration checks, compare before/after
-  │     └── ReporterAgent       -> generate completion report
-  └── (direct tools for ad-hoc queries -- 93% of interactions)
+MigrationWorkflow (ADK 2.0 Workflow graph)
+  START -> Coordinator         -> all tools + skills, handles ~93% ad-hoc queries
+        -> intent_router
+             ├── "done"        -> END (Coordinator already answered)
+             └── "pipeline"    -> PreMigrationAgent  (discover + assess + create plan)
+                                    -> readiness_router
+                                        ├── "ready"     -> HITL approval -> ExecutionAgent (execute + monitor)
+                                        │                                      -> outcome_router
+                                        │                                           ├── "terminal" -> PostMigrationAgent
+                                        │                                           └── "running"  -> ExecutionAgent (loop)
+                                        └── "not_ready" -> PostMigrationAgent (assessment report)
 ```
 
+4 agents, each doing meaningful LLM work:
+
+| Agent | Replaces | Model Tier | Purpose |
+|---|---|---|---|
+| **Coordinator** | Dispatcher + DoneAgent + BatchPlanner | reasoning | Ad-hoc queries, batch planning, pipeline dispatch |
+| **PreMigrationAgent** | DiscoveryAgent + AssessmentAgent | reasoning | VM discovery, readiness assessment, plan creation |
+| **ExecutionAgent** | MigrationAgent + StatusPoller | fast | Migration execution, status monitoring |
+| **PostMigrationAgent** | ValidationAgent + RollbackAgent + ReporterAgent | reasoning | Validation, rollback, reporting |
+
 ADK 2.0 features:
-- **FunctionTool confirmation** -- user must approve before real migration is triggered
-- **before_tool_callback** -- deterministic dry-run gate + readiness gate on create_migration_plan
+- **Workflow graph** -- deterministic edges with conditional routing and monitoring loop
+- **HITL** -- `RequestInput` with durable pause/resume before destructive operations
+- **FunctionTool confirmation** -- `require_confirmation=True` on destructive tools
+- **before_tool_callback** -- dry-run gate on create_migration_plan, execute_migration, rollback_migration
 - **RunConfig** -- max_llm_calls=200 safety limit, SSE streaming
 - **Context compaction** -- older phases auto-summarized to reduce token cost
 - **MLflow tracing** -- tool + LLM call spans for observability
 - **Plugins** -- structured lifecycle logging across all agents and tools
+- **ConfigMap-driven** -- agent instructions and model tiers managed via GitOps
 
 ### Single-pod Sidecar Pattern (OpenShift)
 
