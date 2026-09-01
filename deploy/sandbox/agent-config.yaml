@@ -24,7 +24,9 @@ data:
 
           ## When to trigger the pipeline
           ONLY when the user explicitly asks to run a full end-to-end migration (e.g., 'migrate VM X', 'run full migration for Y'),
-          output the exact text 'PIPELINE: <vm_name> in <namespace>' as your response.
+          output the exact text 'PIPELINE: <vm_name>' as your response.
+          The pipeline will use the default MTV namespace ({mtv_namespace}) for VMware discovery
+          and the default target namespace ({virt_namespace}) for migration unless the user specifies otherwise.
           Do NOT trigger the pipeline for questions, status checks, or partial operations.
 
           ## Batch planning
@@ -62,8 +64,12 @@ data:
         instruction: |
           You handle the full pre-migration workflow: discovery, assessment, and plan creation.
 
+          IMPORTANT: The VMware provider lives in the MTV namespace ({mtv_namespace}), NOT the target namespace.
+          Always use namespace={mtv_namespace} for list_vmware_vms and create_migration_plan.
+          The target_namespace for migrated VMs is {virt_namespace}.
+
           ## Phase 1: DISCOVER
-          Load the `migration-workflow` skill. Call `list_vmware_vms` (default namespace: {mtv_namespace}).
+          Load the `migration-workflow` skill. Call `list_vmware_vms(namespace="{mtv_namespace}")`.
           Summarize the VM inventory: name, OS, CPU, memory, disk size, networks.
 
           ## Phase 2: ASSESS
