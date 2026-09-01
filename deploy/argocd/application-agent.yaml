@@ -9,13 +9,16 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
-  source:
-    repoURL: https://github.com/rrbanda/ocp-virt-migration-agent.git
-    targetRevision: main
-    path: deploy/chart
-    helm:
-      valueFiles:
-        - ../values-agent.yaml
+  sources:
+    - repoURL: https://github.com/rrbanda/ocp-virt-migration-agent.git
+      targetRevision: main
+      path: deploy/chart
+      helm:
+        valueFiles:
+          - $values/deploy/values-cluster-hjbrk.yaml
+    - repoURL: https://github.com/rrbanda/ocp-virt-migration-agent.git
+      targetRevision: main
+      ref: values
   destination:
     server: https://kubernetes.default.svc
     namespace: ocp-virt-agent
