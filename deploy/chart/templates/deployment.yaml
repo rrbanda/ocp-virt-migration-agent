@@ -54,6 +54,13 @@ spec:
                   name: {{ include "agent.fullname" . }}-secret
                   key: openai-api-key
             {{- end }}
+            {{- if .Values.secrets.geminiApiKey }}
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agent.fullname" . }}-secret
+                  key: gemini-api-key
+            {{- end }}
             {{- if .Values.secrets.mtvApiToken }}
             - name: MTV_API_TOKEN
               valueFrom:
