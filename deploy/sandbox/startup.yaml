@@ -32,6 +32,12 @@ data:
     # Runtime overrides (sandbox controller ignores oc apply env changes)
     # Model: local MaaS premium endpoint with gemini-2.5-pro
     export OPENAI_API_BASE="https://maas.apps.ocp.qn6c5.sandbox1388.opentlc.com/v1"
+    # MaaS Route uses cluster CA not in default trust store; disable for OpenAI SDK/LiteLLM
+    export SSL_CERT_FILE=""
+    export REQUESTS_CA_BUNDLE=""
+    export CURL_CA_BUNDLE=""
+    export LITELLM_SSL_VERIFY="false"
+    export OPENAI_SSL_VERIFY="false"
     export ADK_MODEL="openai/gemini-2.5-pro"
     export ADK_MODEL_REASONING="openai/gemini-2.5-pro"
     export ADK_MODEL_FAST="openai/gemini-2.5-flash"

@@ -144,7 +144,8 @@ def _resolve_model(tier: str):
 
     if model_str.startswith("gemini") and "/" not in model_str:
         return model_str
-    return LiteLlm(model=model_str)
+    ssl_verify = os.environ.get("LITELLM_SSL_VERIFY", "true").lower() != "false"
+    return LiteLlm(model=model_str, ssl_verify=ssl_verify)
 
 
 def _get_agent_instruction(agent_name: str, fallback: str) -> str:
