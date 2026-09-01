@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: evalhub-collection-ocp-virt-agent
+  namespace: evalhub
+  labels:
+    trustyai.opendatahub.io/evalhub-collection-type: collection
+    trustyai.opendatahub.io/evalhub-collection-name: ocp-virt-migration-eval-v1
+data:
+  collection.yaml: |
+    id: ocp-virt-migration-eval-v1
+    name: OCP Virt Migration Agent Evaluation v1
+    category: agent
+    description: >-
+      Evaluation of the VMware-to-OpenShift Virtualization migration agent.
+      Measures tool selection accuracy, response quality, skill loading,
+      and safety compliance across 15 benchmark questions.
+    tags:
+      - ocp-virt-migration-agent
+      - migration
+      - tool-calling
+      - production
+    benchmarks:
+      - id: migration_agent_default
+        provider_id: custom
+        weight: 1.0
+        primary_score:
+          metric: response_accuracy
+          lower_is_better: false
+        pass_criteria:
+          threshold: 0.7
+        parameters:
+          llm_model: "gemini-2.5-flash"
+          llm_base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
+    pass_criteria:
+      threshold: 0.6

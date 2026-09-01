@@ -1,0 +1,65 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ocp-virt-agent-eval
+  namespace: ocp-virt-agent-eval
+  annotations:
+    argocd.argoproj.io/sync-options: Replace=true,Force=true
+    agenthive.io/eval-rev: "1"
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: eval-runner
+      initContainers:
+      - name: git-clone
+        image: registry.access.redhat.com/ubi9/python-312:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          git clone --depth 1 --single-branch --branch main \
+            https://github.com/rrbanda/ocp-virt-migration-agent.git /workspace/repo
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      containers:
+      - name: eval
+        image: registry.access.redhat.com/ubi9/python-312:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -euo pipefail
+          pip install --quiet "mlflow[kubernetes]" requests
+          export MLFLOW_TRACKING_K8S_NAMESPACE="$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)"
+          cd /workspace/repo
+          python3 eval/evaluate.py
+        env:
+        - name: AGENT_URL
+          value: "https://ocp-virt-migration-agent-ocp-virt-agent.apps.ocp.qn6c5.sandbox1388.opentlc.com"
+        - name: BENCHMARK_PATH
+          value: "/workspace/repo/eval/gold/benchmark_migration.json"
+        - name: MLFLOW_TRACKING_URI
+          value: "https://mlflow.redhat-ods-applications.svc.cluster.local:8443/mlflow"
+        - name: MLFLOW_TRACKING_AUTH
+          value: "kubernetes-namespaced"
+        - name: MLFLOW_TRACKING_INSECURE_TLS
+          value: "true"
+        - name: MLFLOW_EXPERIMENT
+          value: "ocp-virt-migration-agent-eval"
+        - name: EVAL_TIMEOUT
+          value: "120"
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 1Gi
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      volumes:
+      - name: workspace
+        emptyDir: {}

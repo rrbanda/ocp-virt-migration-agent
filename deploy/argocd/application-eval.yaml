@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ocp-virt-agent-eval
+  namespace: openshift-gitops
+  labels:
+    app.kubernetes.io/part-of: ocp-virt-migration-agent
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rrbanda/ocp-virt-migration-agent.git
+    targetRevision: main
+    path: eval
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ocp-virt-agent-eval
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
