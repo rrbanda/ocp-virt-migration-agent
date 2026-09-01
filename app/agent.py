@@ -46,7 +46,6 @@ from google.adk.tools import FunctionTool
 from google.adk.tools.skill_toolset import SkillToolset
 from google.adk.workflow import Workflow
 from google.genai import types as genai_types
-from pydantic import BaseModel, Field
 
 from .callbacks import migration_safety_callback
 from .shared.cluster_clients import DEFAULT_MTV_NAMESPACE, DEFAULT_VIRT_NAMESPACE
@@ -143,36 +142,7 @@ log.info("Discovered %d skills from %s", len(skills), SKILLS_DIR)
 
 
 # ---------------------------------------------------------------------------
-# Pydantic output schemas for workflow agents (ADK best practice)
 # ---------------------------------------------------------------------------
-class DispatcherOutput(BaseModel):
-    action: str = Field(description="PIPELINE:<vm> in <ns>, BATCH:<vms> in <ns>, or the complete answer")
-
-
-class InventoryOutput(BaseModel):
-    inventory: str = Field(description="JSON inventory of discovered VMs")
-
-
-class AssessmentOutput(BaseModel):
-    verdict: str = Field(description="READY or NOT READY with risk rating and details")
-
-
-class MigrationOutput(BaseModel):
-    result: str = Field(description="Migration plan name, migration name, and status")
-
-
-class StatusOutput(BaseModel):
-    status: str = Field(description="Migration phase and VM progress summary")
-
-
-class ValidationOutput(BaseModel):
-    result: str = Field(description="PASS or FAIL with comparison details")
-
-
-class ReportOutput(BaseModel):
-    report: str = Field(description="Formal migration report content")
-
-
 # ---------------------------------------------------------------------------
 # Graph router functions (use ctx.state for per-session data, not globals)
 # ---------------------------------------------------------------------------
@@ -228,7 +198,6 @@ def monitor_router(ctx: Context, node_input: dict):
     """Route monitor loop: completed/failed/running. Per-session poll counter via ctx.state."""
     count = ctx.state.get("temp:monitor_poll_count", 0) + 1
     status = str(node_input.get("status", node_input) if isinstance(node_input, dict) else node_input)
-
     if any(kw in status for kw in ("Failed", "Error", "Canceled", "Cancelled")):
         log.info("[Router] Migration FAILED")
         return Event(route="failed", output=status, state={"temp:monitor_poll_count": 0})
@@ -258,7 +227,6 @@ def _build_workflow():
     skill_tools = [SkillToolset(skills=skills)] if skills else []
     migration_tool = FunctionTool(create_migration_plan, require_confirmation=True)
     rollback_tool = FunctionTool(rollback_migration, require_confirmation=True)
-
     # -- Dispatcher: handles ad-hoc queries with all tools -----------------
     dispatcher = LlmAgent(
         name="Dispatcher",
@@ -319,10 +287,8 @@ def _build_workflow():
             *skill_tools,
         ],
         before_tool_callback=migration_safety_callback,
-        output_schema=DispatcherOutput,
         output_key="dispatch_result",
     )
-
     # -- Done: summarizes ad-hoc results -----------------------------------
     done_agent = LlmAgent(
         name="DoneAgent",
@@ -330,7 +296,6 @@ def _build_workflow():
         instruction="Summarize the dispatcher's result for the user in a clear, helpful format.",
         output_key="final_answer",
     )
-
     # -- Batch planner: plans multi-VM migrations --------------------------
     batch_planner = LlmAgent(
         name="BatchPlannerAgent",
@@ -342,7 +307,6 @@ def _build_workflow():
         tools=[list_vmware_vms, *skill_tools],
         output_key="batch_plan",
     )
-
     # -- Pipeline agents ---------------------------------------------------
     discovery_agent = LlmAgent(
         name="DiscoveryAgent",
@@ -352,17 +316,14 @@ def _build_workflow():
             f"Call `list_vmware_vms` (default namespace: {DEFAULT_MTV_NAMESPACE})."
         ),
         tools=[list_vmware_vms],
-        output_schema=InventoryOutput,
         output_key="vm_inventory",
     )
-
     _pre_hint = (
         f"AAP template ID: {PRE_MIGRATION_TEMPLATE_ID}. "
         "Launch via launch_job, poll get_job_status, retrieve get_job_output. "
         if PRE_MIGRATION_TEMPLATE_ID
         else "No AAP configured. Assess using inventory data and skills. "
     )
-
     assessment_agent = LlmAgent(
         name="AssessmentAgent",
         model=model,
@@ -374,12 +335,9 @@ def _build_workflow():
             "If AAP output is available, also load `ansible-output-parser`."
         ),
         tools=[launch_job, get_job_status, get_job_output, *skill_tools],
-        output_schema=AssessmentOutput,
         output_key="readiness_verdict",
     )
-
     execute_tool = FunctionTool(execute_migration, require_confirmation=True)
-
     migration_agent = LlmAgent(
         name="MigrationAgent",
         model=model,
@@ -390,10 +348,8 @@ def _build_workflow():
         ),
         tools=[execute_tool],
         before_tool_callback=migration_safety_callback,
-        output_schema=MigrationOutput,
         output_key="migration_id",
     )
-
     monitor_poller = LlmAgent(
         name="StatusPoller",
         model=model,
@@ -403,16 +359,13 @@ def _build_workflow():
             "and call get_pod_logs for diagnosis."
         ),
         tools=[get_migration_status, get_pod_logs, *skill_tools],
-        output_schema=StatusOutput,
         output_key="migration_status",
     )
-
     _post_hint = (
         f"AAP template ID: {POST_MIGRATION_TEMPLATE_ID}. "
         if POST_MIGRATION_TEMPLATE_ID
         else "No AAP configured. Validate using APIs and skills. "
     )
-
     validation_agent = LlmAgent(
         name="ValidationAgent",
         model=model,
@@ -431,10 +384,8 @@ def _build_workflow():
             get_job_output,
             *skill_tools,
         ],
-        output_schema=ValidationOutput,
         output_key="validation_result",
     )
-
     rollback_agent = LlmAgent(
         name="RollbackAgent",
         model=model,
@@ -446,7 +397,6 @@ def _build_workflow():
         tools=[rollback_tool, record_migration],
         output_key="rollback_result",
     )
-
     reporter_agent = LlmAgent(
         name="ReporterAgent",
         model=model,
@@ -456,10 +406,8 @@ def _build_workflow():
             "Call record_migration to save the outcome."
         ),
         tools=[save_report_artifact, record_migration, *skill_tools],
-        output_schema=ReportOutput,
         output_key="final_report",
     )
-
     # -- Workflow graph ----------------------------------------------------
     workflow = Workflow(
         name=AGENT_NAME,
@@ -486,7 +434,6 @@ def _build_workflow():
             (rollback_agent, reporter_agent),
         ],
     )
-
     return workflow
 
 
@@ -519,7 +466,6 @@ def _build_single_agent() -> LlmAgent:
     migration_tool = FunctionTool(create_migration_plan, require_confirmation=True)
     rollback_tool = FunctionTool(rollback_migration, require_confirmation=True)
     skill_tools = [SkillToolset(skills=skills)] if skills else []
-
     tools = [
         *skill_tools,
         list_vmware_vms,
@@ -538,7 +484,6 @@ def _build_single_agent() -> LlmAgent:
         search_migration_history,
         record_migration,
     ]
-
     return LlmAgent(
         model=model,
         name=os.environ.get("AGENT_NAME", "migration_agent"),
@@ -553,16 +498,13 @@ def _build_single_agent() -> LlmAgent:
 # Build root_agent based on AGENT_MODE
 # ---------------------------------------------------------------------------
 log.info("Agent mode: %s", AGENT_MODE)
-
 if AGENT_MODE == "single":
     log.info("Building legacy single-agent")
     root_agent = _build_single_agent()
 else:
     log.info("Building ADK 2.0 Hybrid Workflow")
     root_agent = _build_workflow()
-
 log.info("Root agent ready: %s", root_agent.name)
-
 # ---------------------------------------------------------------------------
 # ADK App with context compaction and plugins
 # ---------------------------------------------------------------------------
@@ -578,7 +520,6 @@ app = App(
         event_retention_size=COMPACTION_EVENT_RETENTION,
     ),
 )
-
 # ---------------------------------------------------------------------------
 # Default RunConfig with safety limits
 # ---------------------------------------------------------------------------
