@@ -1,0 +1,40 @@
+{
+  "eval_set_id": "sample_post_migration_validation",
+  "name": "Sample Post-Migration Validation",
+  "description": "Verify the agent can analyze bundled sample post-migration playbook output and produce a validation report. No live infrastructure required.",
+  "eval_cases": [
+    {
+      "eval_id": "analyze_sample_post_migration",
+      "conversation": [
+        {
+          "invocation_id": "inv-post-mig-001",
+          "user_content": {
+            "parts": [
+              {
+                "text": "Analyze the sample post-migration output and produce a validation report."
+              }
+            ]
+          },
+          "expected_tool_use": [
+            {
+              "tool_name": "load_skill",
+              "description": "Load the post-migration-validator or ansible-output-parser skill"
+            },
+            {
+              "tool_name": "load_skill_resource",
+              "description": "Load the sample post-migration playbook output"
+            }
+          ],
+          "final_response": {
+            "text_contains": [
+              "OpenShift Virtualization",
+              "VALIDATED",
+              "ok=43",
+              "qemu-guest-agent"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -10,8 +10,10 @@ HANDOFF.md
 docs/
 deploy/
 *.md
-!agent/app/skills/**/*.md
+!app/skills/**/*.md
 !README.md
+tests/
+agent/
 .venv/
 venv/
 node_modules/

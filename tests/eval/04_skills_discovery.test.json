@@ -1,0 +1,36 @@
+{
+  "eval_set_id": "skills_discovery",
+  "name": "Skills Discovery",
+  "description": "Verify the agent can list available skills and describe their capabilities.",
+  "eval_cases": [
+    {
+      "eval_id": "list_all_skills",
+      "conversation": [
+        {
+          "invocation_id": "inv-skills-001",
+          "user_content": {
+            "parts": [
+              {
+                "text": "What skills do you have available?"
+              }
+            ]
+          },
+          "expected_tool_use": [
+            {
+              "tool_name": "list_skills",
+              "description": "Discover available analysis skills"
+            }
+          ],
+          "final_response": {
+            "text_contains": [
+              "pre-migration-analyzer",
+              "post-migration-validator",
+              "ansible-output-parser",
+              "risk-assessor"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

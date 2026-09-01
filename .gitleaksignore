@@ -1,0 +1,10 @@
+# Gitleaks false-positive allowlist
+#
+# Add commit hashes or fingerprints of known false positives here.
+# See: https://patterns.security.redhat.com/docs
+#
+# Format: one fingerprint per line (from rh-gitleaks output)
+#
+# Example placeholders in deployment manifests (not real secrets):
+# deploy/openshift.yaml contains "not-needed" as OPENAI_API_KEY for local LLMs
+# agent/.env.example contains commented-out placeholder values

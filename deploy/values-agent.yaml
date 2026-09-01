@@ -1,0 +1,24 @@
+# Agent-specific values for the OCP Virt migration agent.
+# This file is auto-updated by CI with the latest image tag.
+# ArgoCD watches this file for changes.
+
+image:
+  repository: ghcr.io/rrbanda/ocp-virt-migration-agent
+  tag: "latest"
+
+env:
+  ADK_MODEL: "openai/gemini/models/gemini-2.5-flash"
+  OPENAI_API_BASE: ""
+  AGENT_MODE: "pipeline"
+  MIGRATION_DRY_RUN: "true"
+  DEFAULT_MTV_NAMESPACE: "mtv-user1"
+  DEFAULT_VIRT_NAMESPACE: "vmimported-user1"
+  TARGET_STORAGE_CLASS: ""
+
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "100m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"

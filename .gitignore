@@ -15,16 +15,25 @@ venv/
 node_modules/
 dist/
 
-# IDE
+# IDE / editor
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 .DS_Store
 
-# Kubernetes secrets (never commit)
+# Kubernetes secrets (never commit plaintext)
 *-secret.yaml
 *-credentials.yaml
+!deploy/sealed-secrets/*.yaml
+
+# Helm temp files
+.helm-secrets.yaml
 
 # Session handoff docs (contain cluster URLs and credential hints)
 HANDOFF.md
+
+# Gitleaks cache and reports
+.gitleaks-report.json
+

@@ -1,0 +1,51 @@
+"""Safety callbacks for the migration agent.
+
+Provides a before_tool_callback that enforces the dry-run guardrail on
+``create_migration_plan``.  The readiness gate (NOT READY check) is
+handled deterministically by the graph readiness_router node.
+
+All migration tool invocations are logged for audit purposes.
+"""
+
+import logging
+import os
+
+from google.adk.tools import BaseTool, ToolContext
+
+log = logging.getLogger(__name__)
+
+_DRY_RUN = os.environ.get("MIGRATION_DRY_RUN", "false").lower() == "true"
+
+
+def migration_safety_callback(
+    tool: BaseTool,
+    args: dict,
+    tool_context: ToolContext,
+) -> dict | None:
+    """Intercept destructive migration tools with the dry-run gate."""
+    if tool.name != "create_migration_plan":
+        return None
+
+    namespace = args.get("namespace", "")
+    vm_name = args.get("vm_name", "")
+
+    if _DRY_RUN:
+        log.warning(
+            "[DRY-RUN] Blocked create_migration_plan for %s/%s",
+            namespace, vm_name,
+        )
+        return {
+            "status": "dry_run",
+            "vm_name": vm_name,
+            "namespace": namespace,
+            "message": (
+                f"Migration of '{vm_name}' was NOT executed because MIGRATION_DRY_RUN "
+                "is enabled. Disable dry-run mode to proceed."
+            ),
+        }
+
+    log.info(
+        "[APPROVED] create_migration_plan for %s/%s -- proceeding",
+        namespace, vm_name,
+    )
+    return None

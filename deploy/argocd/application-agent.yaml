@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ocp-virt-migration-agent
+  namespace: openshift-gitops
+  labels:
+    app.kubernetes.io/part-of: ocp-virt-migration-agent
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rrbanda/gadk-rhoai.git
+    targetRevision: main
+    path: deploy/chart
+    helm:
+      valueFiles:
+        - ../values-agent.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ocp-virt-agent
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 1m

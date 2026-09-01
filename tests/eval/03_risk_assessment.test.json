@@ -1,0 +1,61 @@
+{
+  "eval_set_id": "risk_assessment",
+  "name": "VM Risk Assessment",
+  "description": "Verify the agent can assess migration risk for a VM profile using the risk-assessor skill. No live infrastructure required.",
+  "eval_cases": [
+    {
+      "eval_id": "high_risk_vm",
+      "conversation": [
+        {
+          "invocation_id": "inv-risk-001",
+          "user_content": {
+            "parts": [
+              {
+                "text": "Assess the migration risk for a RHEL 7 VM with 500GB disk, NFS mounts, and no recent backup."
+              }
+            ]
+          },
+          "expected_tool_use": [
+            {
+              "tool_name": "load_skill",
+              "description": "Load the risk-assessor skill"
+            }
+          ],
+          "final_response": {
+            "text_contains": [
+              "HIGH",
+              "disk",
+              "backup"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eval_id": "low_risk_vm",
+      "conversation": [
+        {
+          "invocation_id": "inv-risk-002",
+          "user_content": {
+            "parts": [
+              {
+                "text": "Assess the migration risk for a RHEL 9 VM with 50GB disk, no NFS, and verified full+incremental backup."
+              }
+            ]
+          },
+          "expected_tool_use": [
+            {
+              "tool_name": "load_skill",
+              "description": "Load the risk-assessor skill"
+            }
+          ],
+          "final_response": {
+            "text_contains": [
+              "LOW"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

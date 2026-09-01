@@ -1,0 +1,34 @@
+{
+  "eval_set_id": "mtv_failure_diagnosis",
+  "name": "MTV Failure Diagnosis",
+  "description": "Verify the agent can diagnose hypothetical MTV migration failures using mtv-log-analyzer skill.",
+  "eval_cases": [
+    {
+      "eval_id": "stuck_disk_transfer",
+      "conversation": [
+        {
+          "invocation_id": "inv-diag-001",
+          "user_content": {
+            "parts": [
+              {
+                "text": "A VM migration is stuck at 45% disk transfer for over 2 hours. What could be wrong and how do I fix it?"
+              }
+            ]
+          },
+          "expected_tool_use": [
+            {
+              "tool_name": "load_skill",
+              "description": "Load the mtv-log-analyzer skill"
+            }
+          ],
+          "final_response": {
+            "text_contains": [
+              "network",
+              "bandwidth"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

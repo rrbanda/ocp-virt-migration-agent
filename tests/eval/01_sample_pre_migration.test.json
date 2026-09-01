@@ -1,0 +1,52 @@
+{
+  "eval_set_id": "sample_pre_migration_analysis",
+  "name": "Sample Pre-Migration Analysis",
+  "description": "Verify the agent can analyze bundled sample pre-migration playbook output and produce a readiness report. No live infrastructure required.",
+  "eval_cases": [
+    {
+      "eval_id": "analyze_sample_pre_migration",
+      "conversation": [
+        {
+          "invocation_id": "inv-pre-mig-001",
+          "user_content": {
+            "parts": [
+              {
+                "text": "Analyze the sample pre-migration output and produce a readiness assessment report."
+              }
+            ]
+          },
+          "expected_tool_use": [
+            {
+              "tool_name": "load_skill",
+              "description": "Load the pre-migration-analyzer or ansible-output-parser skill"
+            },
+            {
+              "tool_name": "load_skill_resource",
+              "description": "Load the sample pre-migration playbook output"
+            }
+          ],
+          "expected_intermediate_agent_responses": [
+            {
+              "author": "migration_coordinator",
+              "text_contains": ["pre-migration", "readiness"]
+            }
+          ],
+          "final_response": {
+            "text_contains": [
+              "hostname.xyz.com",
+              "RedHat 8.10",
+              "READY",
+              "ok=58",
+              "failed=0",
+              "ignored=2"
+            ],
+            "text_not_contains": [
+              "error",
+              "unable to load"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

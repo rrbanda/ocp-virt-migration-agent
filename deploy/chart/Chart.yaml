@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ocp-virt-migration-agent
+description: VMware-to-OpenShift Virtualization migration agent with ADK 2.0
+type: application
+version: 0.2.0
+appVersion: "0.2.0"

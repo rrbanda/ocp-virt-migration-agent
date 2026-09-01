@@ -1,4 +1,4 @@
-# gadk-rhoai
+# ocp-virt-migration-agent
 
 AI-powered VMware-to-OpenShift Virtualization migration agent built with [Google ADK](https://github.com/google/adk-python), deployed on OpenShift with OIDC auth, LLM flexibility, and configurable skills.
 
@@ -23,16 +23,24 @@ For detailed architecture documentation with 5 diagrams (deployment, agent pipel
 ### Multi-Agent Pipeline (AGENT_MODE=pipeline)
 
 ```
-Coordinator (root_agent)
-  |-- MigrationPipeline (SequentialAgent)
-  |     |-- DiscoveryAgent      -> list VMware VMs
-  |     |-- AssessmentAgent     -> run pre-migration checks, produce readiness report
-  |     |-- MigrationAgent      -> trigger MTV migration
-  |     |-- MigrationMonitor    -> poll status until complete (LoopAgent)
-  |     |-- ValidationAgent     -> run post-migration checks, compare before/after
-  |     |-- ReporterAgent       -> generate completion report
-  |-- (direct tools for ad-hoc queries)
+Coordinator (root_agent, LlmAgent)
+  ├── MigrationPipeline (SequentialAgent)
+  │     ├── DiscoveryAgent      -> list VMware VMs
+  │     ├── AssessmentAgent     -> run pre-migration checks, produce readiness report
+  │     ├── MigrationAgent      -> trigger MTV migration (with HITL confirmation)
+  │     ├── MigrationMonitor    -> poll status until complete (LoopAgent)
+  │     ├── ValidationAgent     -> run post-migration checks, compare before/after
+  │     └── ReporterAgent       -> generate completion report
+  └── (direct tools for ad-hoc queries -- 93% of interactions)
 ```
+
+ADK 2.0 features:
+- **FunctionTool confirmation** -- user must approve before real migration is triggered
+- **before_tool_callback** -- deterministic dry-run gate + readiness gate on create_migration_plan
+- **RunConfig** -- max_llm_calls=200 safety limit, SSE streaming
+- **Context compaction** -- older phases auto-summarized to reduce token cost
+- **MLflow tracing** -- tool + LLM call spans for observability
+- **Plugins** -- structured lifecycle logging across all agents and tools
 
 ### Single-pod Sidecar Pattern (OpenShift)
 
@@ -49,12 +57,12 @@ Coordinator (root_agent)
 | `ansible-output-parser` | Parses AAP job output format (Slice headers, assertions, ignored errors, PLAY RECAP) |
 | `assessment-report-generator` | Formal readiness report with per-check table, blockers, warnings, remediation |
 | `completion-report-generator` | Migration completion report with before/after comparison and sign-off |
-| `mtv-log-analyzer` | Diagnoses MTV migration failures from forklift/virt-v2v/CDI logs |
+| `mtv-log-analyzer` | Diagnoses MTV 2.8–2.11 migration failures (cold, warm, live, storage copy offload) from forklift/virt-v2v/CDI logs |
 | `migration-kb-builder` | Manages knowledge base of migration patterns and resolutions |
 | `capacity-analyzer` | Cluster capacity analysis for migration planning |
 | `batch-planner` | Groups VMs into migration batches by risk, dependency, and capacity |
 | `risk-assessor` | Weighted risk scoring (OS, disk, network, criticality, backup, history) |
-| `migration-workflow` | End-to-end orchestration: discover, assess, migrate, monitor, validate, report |
+| `migration-workflow` | End-to-end orchestration: discover, assess, select migration type (cold/warm/live), migrate, monitor, validate, report |
 
 Skills include bundled sample data from real customer playbook output for offline demos.
 
@@ -190,8 +198,10 @@ The agent image has all 11 skills baked in at `/skills/`. However, the OpenShift
 |---|---|---|
 | `OPENAI_API_BASE` | - | LLM API endpoint |
 | `ADK_MODEL` | `openai/gemini/models/gemini-2.5-flash` | LiteLlm model string |
-| `AGENT_MODE` | `pipeline` | `pipeline` (multi-agent) or `single` (monolithic) |
+| `AGENT_MODE` | `pipeline` | `pipeline` (graph workflow) or `single` (monolithic) |
 | `SKILLS_DIR` | `/skills` | Skills directory path |
+| `MAX_LLM_CALLS` | `200` | Maximum LLM calls per run (safety limit) |
+| `MIGRATION_DRY_RUN` | `false` | Block real migrations when `true` |
 | `DEFAULT_MTV_NAMESPACE` | `mtv-user1` | MTV provider namespace |
 | `DEFAULT_VIRT_NAMESPACE` | `vmimported-user1` | Target namespace for migrated VMs |
 | `AAP_URL` | - | AAP Controller URL |
@@ -257,10 +267,10 @@ Set `OPENAI_API_KEY=not-needed` for local models that don't require authenticati
 
 | Requirement | Minimum Version | Purpose |
 |---|---|---|
-| **OpenShift** | 4.14+ | Container platform |
-| **OCP Virtualization** | 4.14+ | Target platform for migrated VMs |
-| **Migration Toolkit for Virtualization (MTV)** | 2.5+ | VMware-to-OCP Virt migration engine |
-| **VMware vSphere** | 7.0+ | Source hypervisor (configured as MTV provider) |
+| **OpenShift** | 4.18+ | Container platform |
+| **OCP Virtualization** | 4.18+ | Target platform for migrated VMs (4.21 for MIG vGPU, UDN, Lightspeed) |
+| **Migration Toolkit for Virtualization (MTV)** | 2.10+ | VMware-to-OCP Virt migration engine (2.11 for storage copy offload, OVA import) |
+| **VMware vSphere** | 6.5+ | Source hypervisor (configured as MTV provider); vSphere 7 EOL Oct 2025 |
 | **Storage** | ODF or equivalent | StorageClass for VM disk PVCs |
 | **Keycloak** (optional) | -- | OIDC authentication for the UI |
 | **Ansible Automation Platform** (optional) | 2.4+ | Pre/post migration playbook execution |
@@ -281,14 +291,40 @@ No external internet access is required at runtime. All skills and sample data a
 
 ## Building Images
 
+The agent image uses Red Hat UBI9 Python 3.12 as the base for RHOAI compliance.
+
 ```bash
-# Build the agent image
-cd /path/to/gadk-rhoai
+# Using Makefile (recommended)
+make build     # builds the standard agent image
+make push      # pushes to registry
+
+# Or build manually
 podman build --platform linux/amd64 -f deploy/Dockerfile.agent -t adk-agent:migration .
 podman push quay.io/rbrhssa/adk-agent:migration
 
+# OpenShell sandbox image (for network-isolated deployments)
+make build-openshell
+make push-openshell
+
 # Redeploy (no image rebuild needed for skill-only changes via ConfigMap)
 oc rollout restart deployment/adk-web -n adk-web
+```
+
+## Developer Workflow
+
+A Makefile provides standardized development targets:
+
+```bash
+make help              # show all available targets
+make init              # create .env from .env.example
+make env               # create venv and install dependencies
+make run               # start ADK api_server on port 8000
+make run-api           # start OpenAI-compatible FastAPI on port 8080
+make test              # run unit tests
+make test-behavioral   # run behavioral tests against a deployed agent
+make lint              # run ruff linter
+make deploy            # apply OpenShift manifests
+make deploy-openshell  # deploy in OpenShell sandbox
 ```
 
 ## License
