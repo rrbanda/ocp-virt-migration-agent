@@ -48,6 +48,7 @@ class ChatCompletionRequest(BaseModel):
     model: str | None = None
     stream: bool = False
     session_id: str | None = None
+    resume_tool_call_id: str | None = None
 
 
 class ChoiceMessage(BaseModel):
@@ -67,6 +68,7 @@ class PendingAction(BaseModel):
     type: str = "human_approval"
     interrupt_id: str
     message: str
+    tool_call_id: str = ""
 
 
 class ChatCompletionResponse(BaseModel):
@@ -141,10 +143,12 @@ async def chat_completions(request: ChatCompletionRequest):
 
     if request.stream:
         return await _stream(user_text, model_id, request.session_id)
-    return await _non_stream(user_text, model_id, request.session_id)
+    return await _non_stream(user_text, model_id, request.session_id, request.resume_tool_call_id)
 
 
-async def _non_stream(user_text: str, model_id: str, session_id: str | None = None) -> dict[str, Any]:
+async def _non_stream(
+    user_text: str, model_id: str, session_id: str | None = None, resume_tool_call_id: str | None = None
+) -> dict[str, Any]:
     try:
         if session_id:
             try:
@@ -163,7 +167,21 @@ async def _non_stream(user_text: str, model_id: str, session_id: str | None = No
             )
             session_id = session.id
 
-        msg = types.Content(role="user", parts=[types.Part.from_text(text=user_text)])
+        if resume_tool_call_id:
+            msg = types.Content(
+                role="user",
+                parts=[
+                    types.Part(
+                        function_response=types.FunctionResponse(
+                            id=resume_tool_call_id,
+                            name="adk_request_input",
+                            response={"result": user_text},
+                        )
+                    )
+                ],
+            )
+        else:
+            msg = types.Content(role="user", parts=[types.Part.from_text(text=user_text)])
 
         all_text_parts: list[str] = []
         context: list[dict] = []
@@ -183,11 +201,13 @@ async def _non_stream(user_text: str, model_id: str, session_id: str | None = No
                     if part.function_call:
                         fc_name = part.function_call.name
                         fc_args = dict(part.function_call.args) if part.function_call.args else {}
+                        fc_id = part.function_call.id or ""
                         if fc_name == "adk_request_input":
                             pending_action = {
                                 "type": "human_approval",
                                 "interrupt_id": fc_args.get("interruptId", ""),
                                 "message": fc_args.get("message", ""),
+                                "tool_call_id": fc_id,
                             }
                         context.append(
                             {
@@ -200,6 +220,7 @@ async def _non_stream(user_text: str, model_id: str, session_id: str | None = No
                                             "name": fc_name,
                                             "arguments": json.dumps(fc_args),
                                         },
+                                        "id": fc_id,
                                     }
                                 ],
                             }
