@@ -17,11 +17,13 @@ log = logging.getLogger(__name__)
 
 _DRY_RUN = os.environ.get("MIGRATION_DRY_RUN", "false").lower() == "true"
 
-_DESTRUCTIVE_TOOLS = frozenset({
-    "create_migration_plan",
-    "execute_migration",
-    "rollback_migration",
-})
+_DESTRUCTIVE_TOOLS = frozenset(
+    {
+        "create_migration_plan",
+        "execute_migration",
+        "rollback_migration",
+    }
+)
 
 
 async def migration_safety_callback(
