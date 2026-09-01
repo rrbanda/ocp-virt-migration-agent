@@ -102,6 +102,13 @@ spec:
           value: openshift-mtv
         - name: TARGET_STORAGE_CLASS
           value: ocs-external-storagecluster-ceph-rbd
+        # -- MLflow tracing --
+        - name: MLFLOW_TRACKING_URI
+          value: "https://mlflow.redhat-ods-applications.svc.cluster.local:8443"
+        - name: MLFLOW_EXPERIMENT_NAME
+          value: "ocp-virt-migration-agent"
+        - name: MLFLOW_TRACKING_INSECURE_TLS
+          value: "true"
         ports:
         - containerPort: 8080
           name: http
