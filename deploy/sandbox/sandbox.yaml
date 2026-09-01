@@ -71,13 +71,13 @@ spec:
           valueFrom:
             secretKeyRef:
               key: gemini-api-key
-              name: ocp-virt-migration-agent-auth
+              name: ocp-virt-migration-agent-secret
               optional: true
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
               key: gemini-api-key
-              name: ocp-virt-migration-agent-auth
+              name: ocp-virt-migration-agent-secret
               optional: true
         # -- Multi-cluster (VMware/OCP Virt) --
         - name: MTV_API_URL
@@ -88,7 +88,7 @@ spec:
           valueFrom:
             secretKeyRef:
               key: mtv-api-token
-              name: ocp-virt-migration-agent-auth
+              name: ocp-virt-migration-agent-secret
               optional: true
         - name: MTV_INVENTORY_URL
           value: "https://forklift-inventory-openshift-mtv.apps.cluster-hjbrk.dyn.redhatworkshops.io"

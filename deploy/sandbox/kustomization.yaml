@@ -11,7 +11,7 @@ resources:
   - route.yaml
   - restart-hook.yaml
   - restart-rbac.yaml
-  - agent-sandbox-auth.yaml
+  - agent-secrets.yaml
   - openshell-client-tls.yaml
 
 configMapGenerator:
