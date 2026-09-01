@@ -55,6 +55,7 @@ from .tools import (
     PRE_MIGRATION_TEMPLATE_ID,
     check_cluster_readiness,
     create_migration_plan,
+    execute_migration,
     get_job_output,
     get_job_status,
     get_migration_status,
@@ -68,6 +69,7 @@ from .tools import (
     rollback_migration,
     save_report_artifact,
     search_migration_history,
+    validate_migrated_vm,
 )
 from .tracing import enable_tracing, wrap_tool_with_trace
 
@@ -112,6 +114,8 @@ get_job_output = wrap_tool_with_trace(get_job_output)
 save_report_artifact = wrap_tool_with_trace(save_report_artifact)
 rollback_migration = wrap_tool_with_trace(rollback_migration)
 check_cluster_readiness = wrap_tool_with_trace(check_cluster_readiness)
+execute_migration = wrap_tool_with_trace(execute_migration)
+validate_migrated_vm = wrap_tool_with_trace(validate_migrated_vm)
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +312,8 @@ def _build_workflow():
             get_job_output,
             save_report_artifact,
             rollback_tool,
+            execute_migration,
+            validate_migrated_vm,
             search_migration_history,
             record_migration,
             *skill_tools,
@@ -383,15 +389,18 @@ def _build_workflow():
         output_key="readiness_verdict",
     )
 
+    execute_tool = FunctionTool(execute_migration, require_confirmation=True)
+
     migration_agent = LlmAgent(
         name="MigrationAgent",
         model=model,
         instruction=(
-            "Trigger the VMware-to-OCP migration.\n"
-            "The user has approved. Call create_migration_plan with the correct "
-            "namespace and VM name from session state."
+            "Execute the approved migration.\n"
+            "The user has approved the migration plan. Call execute_migration with the "
+            "plan_name and namespace from session state 'migration_id'.\n"
+            "For cold migration, leave cutover empty. For warm migration, provide cutover time."
         ),
-        tools=[migration_tool],
+        tools=[execute_tool],
         before_tool_callback=migration_safety_callback,
         output_schema=MigrationOutput,
         output_key="migration_id",
@@ -423,10 +432,19 @@ def _build_workflow():
         instruction=(
             "Validate post-migration results.\n"
             f"{_post_hint}"
+            "Call validate_migrated_vm to run comprehensive checks (boot, guest agent, storage, networking).\n"
             "Compare migrated VM against source inventory in 'vm_inventory'.\n"
             "Load post-migration-validator skill. Output PASS or FAIL verdict."
         ),
-        tools=[list_migrated_vms, get_vm_details, launch_job, get_job_status, get_job_output, *skill_tools],
+        tools=[
+            validate_migrated_vm,
+            list_migrated_vms,
+            get_vm_details,
+            launch_job,
+            get_job_status,
+            get_job_output,
+            *skill_tools,
+        ],
         output_schema=ValidationOutput,
         output_key="validation_result",
     )

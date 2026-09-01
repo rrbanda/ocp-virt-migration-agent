@@ -12,11 +12,13 @@ from .cluster_readiness import check_cluster_readiness
 from .history_tools import record_migration, search_migration_history
 from .ocp_tools import (
     create_migration_plan,
+    execute_migration,
     get_migration_status,
     get_pod_logs,
     get_vm_details,
     list_migrated_vms,
     list_vmware_vms,
+    validate_migrated_vm,
 )
 from .report_tools import save_report_artifact
 from .rollback_tools import rollback_migration
@@ -26,6 +28,7 @@ __all__ = [
     "PRE_MIGRATION_TEMPLATE_ID",
     "check_cluster_readiness",
     "create_migration_plan",
+    "execute_migration",
     "get_job_output",
     "get_job_status",
     "get_migration_status",
@@ -39,4 +42,5 @@ __all__ = [
     "rollback_migration",
     "save_report_artifact",
     "search_migration_history",
+    "validate_migrated_vm",
 ]

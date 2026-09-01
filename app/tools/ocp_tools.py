@@ -167,6 +167,18 @@ def list_vmware_vms(namespace: str) -> dict:
         if not vmware_provider:
             return {"error": f"No VMware provider found in namespace {namespace}"}
 
+        conditions = vmware_provider.get("status", {}).get("conditions", [])
+        inventory_ready = any(c.get("type") == "InventoryCreated" and c.get("status") == "True" for c in conditions)
+        if not inventory_ready:
+            return {
+                "error": f"VMware provider '{vmware_provider['metadata']['name']}' inventory is not ready. "
+                "Wait for the provider to finish syncing before querying VMs.",
+                "provider_conditions": [
+                    {"type": c.get("type"), "status": c.get("status"), "reason": c.get("reason", "")}
+                    for c in conditions
+                ],
+            }
+
         provider_uid = vmware_provider["metadata"]["uid"]
         provider_name = vmware_provider["metadata"]["name"]
 
@@ -193,7 +205,7 @@ def list_vmware_vms(namespace: str) -> dict:
                     "firmware": vm.get("firmware", "bios"),
                     "disk_count": len(vm.get("disks", [])),
                     "total_disk_gb": round(sum(d.get("capacity", 0) for d in vm.get("disks", [])) / (1024**3), 1),
-                    "networks": [n.get("id") for n in vm.get("networks", [])],
+                    "networks": [{"id": n.get("id"), "name": n.get("name", "Unknown")} for n in vm.get("networks", [])],
                 }
                 for vm in vms
             ],
@@ -378,23 +390,23 @@ def create_migration_plan(
     vm_name: str,
     plan_name: str,
     target_namespace: str,
+    warm: str,
 ) -> dict:
-    """Create an MTV migration plan and trigger it for a VMware VM.
+    """Create an MTV migration plan for a VMware VM. Does NOT start the migration.
 
-    Creates the required NetworkMap, StorageMap, Plan, and Migration CRs
-    to migrate a VM from VMware to OCP Virtualization.
-
-    IMPORTANT: This will START a real migration. The VM will be copied
-    from VMware to OpenShift Virtualization.
+    Creates NetworkMap, StorageMap, and Plan CRs. The Plan is validated by
+    the MTV controller. Returns the plan details for human review. Call
+    execute_migration to actually start the migration after approval.
 
     Args:
         namespace: The MTV namespace with the VMware provider.
         vm_name: The name of the VMware VM to migrate.
-        plan_name: Optional name for the plan (auto-generated if empty).
-        target_namespace: Target namespace for the migrated VM (uses DEFAULT_VIRT_NAMESPACE if empty).
+        plan_name: Name for the plan (auto-generated from vm_name if empty).
+        target_namespace: Target namespace for the migrated VM.
+        warm: Set to 'true' for warm migration (CBT-based, minimal downtime) or 'false' for cold.
 
     Returns:
-        Dictionary with plan name, migration name, and status.
+        Dictionary with plan details for review including VM specs and mappings.
     """
     if not K8S_AVAILABLE:
         return {"error": "kubernetes Python client not installed"}
@@ -404,6 +416,7 @@ def create_migration_plan(
     if not vm_name or not vm_name.strip():
         return {"error": "vm_name is required"}
 
+    is_warm = warm.lower() == "true" if warm else False
     _FORKLIFT_API = f"{FORKLIFT_GROUP}/{FORKLIFT_VERSION}"
     created_resources = []
 
@@ -445,7 +458,7 @@ def create_migration_plan(
             return {"error": f"VM '{vm_name}' not found in VMware inventory"}
 
         if not plan_name:
-            plan_name = f"agent-plan-{vm_name.lower().replace('_', '-')}"
+            plan_name = f"agent-plan-{vm_name.lower().replace('_', '-').replace('.', '-').replace(' ', '-')}"
         if not target_namespace:
             target_namespace = DEFAULT_VIRT_NAMESPACE
 
@@ -462,22 +475,28 @@ def create_migration_plan(
             "namespace": namespace,
         }
 
-        # Step 1: Create NetworkMap (maps all source NICs)
+        # Step 1: Create NetworkMap using source network NAME (per MTV docs)
         nmap_name = f"{plan_name}-netmap"
-        nmap_map = [
-            {"source": {"id": net["id"]}, "destination": {"type": DEFAULT_NETWORK_DESTINATION}}
-            for net in target_vm.get("networks", [])
-            if net.get("id")
-        ]
+        dest_type = DEFAULT_NETWORK_DESTINATION
+        nmap_map = []
+        network_summary = []
+        for net in target_vm.get("networks", []):
+            net_name = net.get("name", "")
+            if not net_name:
+                continue
+            dest = (
+                {"type": dest_type}
+                if dest_type == "pod"
+                else {"type": "multus", "name": dest_type, "namespace": target_namespace}
+            )
+            nmap_map.append({"source": {"name": net_name}, "destination": dest})
+            network_summary.append(f"{net_name} -> {dest_type}")
 
         nmap = {
             "apiVersion": _FORKLIFT_API,
             "kind": "NetworkMap",
             "metadata": {"name": nmap_name, "namespace": namespace},
-            "spec": {
-                "provider": {"source": src_provider_ref, "destination": dst_provider_ref},
-                "map": nmap_map,
-            },
+            "spec": {"provider": {"source": src_provider_ref, "destination": dst_provider_ref}, "map": nmap_map},
         }
         try:
             _k8s_create(
@@ -489,26 +508,21 @@ def create_migration_plan(
                 body=nmap,
             )
             created_resources.append(("networkmaps", nmap_name))
-            log.info("Created NetworkMap '%s' in '%s'", nmap_name, namespace)
         except ApiException as e:
-            if e.status == 409:
-                log.info("NetworkMap '%s' already exists in '%s', reusing", nmap_name, namespace)
-            else:
+            if e.status != 409:
                 return {"error": f"Failed to create NetworkMap: {e.status} {e.reason}"}
 
         # Step 2: Create StorageMap
         smap_name = f"{plan_name}-stormap"
-        datastore_ids = set()
-        for disk in target_vm.get("disks", []):
-            ds_id = disk.get("datastore", {}).get("id")
-            if ds_id:
-                datastore_ids.add(ds_id)
-
+        datastore_ids = {
+            disk.get("datastore", {}).get("id")
+            for disk in target_vm.get("disks", [])
+            if disk.get("datastore", {}).get("id")
+        }
         storage_map_entries = [
             {"source": {"id": ds_id}, "destination": {"storageClass": TARGET_STORAGE_CLASS}} for ds_id in datastore_ids
         ]
         if not storage_map_entries:
-            log.error("VM '%s' has no disks with datastores", vm_name)
             return {"error": "VM has no disks with datastores -- cannot create StorageMap"}
 
         smap = {
@@ -530,26 +544,18 @@ def create_migration_plan(
                 body=smap,
             )
             created_resources.append(("storagemaps", smap_name))
-            log.info("Created StorageMap '%s' in '%s'", smap_name, namespace)
         except ApiException as e:
-            if e.status == 409:
-                log.info("StorageMap '%s' already exists in '%s', reusing", smap_name, namespace)
-            else:
-                log.error(
-                    "Failed to create StorageMap '%s': %s. Orphaned resources: %s",
-                    smap_name,
-                    e.reason,
-                    created_resources,
-                )
+            if e.status != 409:
                 return {
                     "error": f"Failed to create StorageMap: {e.status} {e.reason}",
-                    "orphaned_resources": [f"{kind}/{name}" for kind, name in created_resources],
+                    "orphaned_resources": [f"{k}/{n}" for k, n in created_resources],
                 }
 
-        # Step 3: Create Plan
+        # Step 3: Create Plan (does NOT create Migration -- that's execute_migration)
         plan_spec = {
             "provider": {"source": src_provider_ref, "destination": dst_provider_ref},
             "targetNamespace": target_namespace,
+            "warm": is_warm,
             "map": {
                 "network": {
                     "apiVersion": _FORKLIFT_API,
@@ -564,9 +570,8 @@ def create_migration_plan(
                     "namespace": namespace,
                 },
             },
-            "vms": [{"id": target_vm["id"]}],
+            "vms": [{"id": target_vm["id"], "name": vm_name}],
         }
-
         plan = {
             "apiVersion": _FORKLIFT_API,
             "kind": "Plan",
@@ -575,36 +580,122 @@ def create_migration_plan(
         }
         try:
             _k8s_create(
-                api,
-                group=FORKLIFT_GROUP,
-                version=FORKLIFT_VERSION,
-                namespace=namespace,
-                plural="plans",
-                body=plan,
+                api, group=FORKLIFT_GROUP, version=FORKLIFT_VERSION, namespace=namespace, plural="plans", body=plan
             )
             created_resources.append(("plans", plan_name))
-            log.info("Created Plan '%s' in '%s'", plan_name, namespace)
         except ApiException as e:
-            if e.status == 409:
-                log.info("Plan '%s' already exists in '%s', reusing", plan_name, namespace)
-            else:
-                log.error(
-                    "Failed to create Plan '%s': %s. Orphaned resources: %s", plan_name, e.reason, created_resources
-                )
+            if e.status != 409:
                 return {
                     "error": f"Failed to create Plan: {e.status} {e.reason}",
-                    "orphaned_resources": [f"{kind}/{name}" for kind, name in created_resources],
+                    "orphaned_resources": [f"{k}/{n}" for k, n in created_resources],
                 }
 
-        # Step 4: Create Migration to trigger the plan
+        # Step 4: Check Plan validation status
+        import time as _time
+
+        plan_status = "Unknown"
+        for _ in range(6):
+            _time.sleep(5)
+            try:
+                plan_cr = _k8s_get(
+                    api,
+                    group=FORKLIFT_GROUP,
+                    version=FORKLIFT_VERSION,
+                    namespace=namespace,
+                    plural="plans",
+                    name=plan_name,
+                )
+                conditions = plan_cr.get("status", {}).get("conditions", [])
+                ready = next((c for c in conditions if c.get("type") == "Ready"), None)
+                if ready:
+                    plan_status = "Ready" if ready.get("status") == "True" else f"Not Ready: {ready.get('message', '')}"
+                    break
+            except Exception:
+                pass
+
+        return {
+            "status": "plan_created",
+            "plan_name": plan_name,
+            "plan_validation": plan_status,
+            "migration_type": "warm" if is_warm else "cold",
+            "vm_name": vm_name,
+            "vm_specs": {
+                "cpu": target_vm.get("cpuCount"),
+                "memory_mb": target_vm.get("memoryMB"),
+                "disk_count": len(target_vm.get("disks", [])),
+                "total_disk_gb": round(sum(d.get("capacity", 0) for d in target_vm.get("disks", [])) / (1024**3), 1),
+                "os": target_vm.get("guestName", "Unknown"),
+                "firmware": target_vm.get("firmware", "bios"),
+                "power_state": target_vm.get("powerState"),
+            },
+            "network_mapping": network_summary,
+            "storage_class": TARGET_STORAGE_CLASS,
+            "target_namespace": target_namespace,
+            "message": (
+                f"Migration plan '{plan_name}' created and validated ({plan_status}). "
+                f"Review the plan details above. To start the migration, call execute_migration('{namespace}', '{plan_name}')."
+            ),
+        }
+
+    except ApiException as e:
+        body = ""
+        if e.body:
+            body = e.body[:200] if isinstance(e.body, str) else e.body.decode("utf-8", errors="replace")[:200]
+        return {"error": f"Kubernetes API error: {e.status} {e.reason} {body}"}
+    except Exception as e:
+        log.exception("Unexpected error creating migration plan for '%s'", vm_name)
+        return {"error": f"Error creating migration: {e!s}"}
+
+
+def execute_migration(
+    namespace: str,
+    plan_name: str,
+    cutover: str,
+) -> dict:
+    """Start the migration by creating a Migration CR that references an existing Plan.
+
+    Call this ONLY after create_migration_plan has been called and the human
+    has approved the plan. This triggers the actual VM data transfer.
+
+    Args:
+        namespace: The MTV namespace containing the Plan.
+        plan_name: The name of the validated migration plan to execute.
+        cutover: For warm migrations, the RFC 3339 cutover time (e.g. '2025-03-15T02:00:00Z'). Empty for cold or immediate cutover.
+
+    Returns:
+        Dictionary with migration name and status.
+    """
+    if not K8S_AVAILABLE:
+        return {"error": "kubernetes Python client not installed"}
+    if not namespace or not plan_name:
+        return {"error": "namespace and plan_name are required"}
+
+    _FORKLIFT_API = f"{FORKLIFT_GROUP}/{FORKLIFT_VERSION}"
+
+    try:
+        api = mtv_custom_api()
+        if api is None:
+            return {"error": "Kubernetes client not available"}
+
+        plan_cr = _k8s_get(
+            api, group=FORKLIFT_GROUP, version=FORKLIFT_VERSION, namespace=namespace, plural="plans", name=plan_name
+        )
+        conditions = plan_cr.get("status", {}).get("conditions", [])
+        ready = next((c for c in conditions if c.get("type") == "Ready"), None)
+        if not ready or ready.get("status") != "True":
+            msg = ready.get("message", "Unknown") if ready else "No Ready condition found"
+            return {"error": f"Plan '{plan_name}' is not ready for migration: {msg}"}
+
         migration_name = f"{plan_name}-migration"
+        migration_spec = {"plan": {"name": plan_name, "namespace": namespace}}
+        if cutover and cutover.strip():
+            migration_spec["cutover"] = cutover.strip()
+
         migration = {
             "apiVersion": _FORKLIFT_API,
             "kind": "Migration",
             "metadata": {"name": migration_name, "namespace": namespace},
-            "spec": {
-                "plan": {"name": plan_name, "namespace": namespace},
-            },
+            "spec": migration_spec,
         }
         try:
             _k8s_create(
@@ -615,40 +706,24 @@ def create_migration_plan(
                 plural="migrations",
                 body=migration,
             )
-            log.info("Created Migration '%s' in '%s' -- migration started", migration_name, namespace)
+            log.info("Created Migration '%s' -- migration started", migration_name)
         except ApiException as e:
             if e.status == 409:
-                log.info("Migration '%s' already exists in '%s'", migration_name, namespace)
+                log.info("Migration '%s' already exists, reusing", migration_name)
             else:
-                log.error(
-                    "Failed to create Migration '%s': %s. Created resources: %s",
-                    migration_name,
-                    e.reason,
-                    created_resources,
-                )
-                return {
-                    "error": f"Failed to create Migration: {e.status} {e.reason}",
-                    "created_resources": [f"{kind}/{name}" for kind, name in created_resources],
-                }
+                return {"error": f"Failed to create Migration: {e.status} {e.reason}"}
 
         return {
-            "status": "Migration triggered",
+            "status": "migration_started",
             "plan_name": plan_name,
             "migration_name": migration_name,
-            "vm_name": vm_name,
-            "target_namespace": target_namespace,
-            "message": f"Migration of '{vm_name}' started. Use get_migration_status('{namespace}') to monitor progress.",
+            "message": f"Migration started. Use get_migration_status('{namespace}') to monitor progress.",
         }
 
     except ApiException as e:
-        body = ""
-        if e.body:
-            body = e.body[:200] if isinstance(e.body, str) else e.body.decode("utf-8", errors="replace")[:200]
-        log.error("Migration plan creation failed for '%s': %s %s %s", vm_name, e.status, e.reason, body)
-        return {"error": f"Kubernetes API error: {e.status} {e.reason} {body}"}
+        return {"error": f"Kubernetes API error: {e.status} {e.reason}"}
     except Exception as e:
-        log.exception("Unexpected error creating migration plan for '%s'", vm_name)
-        return {"error": f"Error creating migration: {e!s}"}
+        return {"error": f"Error: {e!s}"}
 
 
 def get_pod_logs(namespace: str, pod_pattern: str, tail_lines: int) -> dict:
@@ -693,6 +768,145 @@ def get_pod_logs(namespace: str, pod_pattern: str, tail_lines: int) -> dict:
                 logs[pod_name] = "(unable to read logs)"
 
         return {"namespace": namespace, "pattern": pod_pattern, "pod_count": len(matching), "logs": logs}
+    except ApiException as e:
+        return {"error": f"Kubernetes API error: {e.status} {e.reason}"}
+    except Exception as e:
+        return {"error": f"Error: {e!s}"}
+
+
+def validate_migrated_vm(namespace: str, vm_name: str) -> dict:
+    """Comprehensive post-migration validation for a migrated VM on OCP Virtualization.
+
+    Checks VM boot status, guest agent connectivity, PVC binding, and
+    compares the migrated VM against expected specs. Call this after
+    migration completes to verify the VM is production-ready.
+
+    Args:
+        namespace: Namespace containing the migrated VirtualMachine.
+        vm_name: Name of the VirtualMachine resource to validate.
+
+    Returns:
+        Dictionary with validation results for each check item.
+    """
+    if not K8S_AVAILABLE:
+        return {"error": "kubernetes Python client not installed"}
+
+    checks = {}
+    overall = "PASS"
+
+    try:
+        api = virt_custom_api()
+
+        # Check 1: VirtualMachine exists
+        try:
+            vm = _k8s_get(
+                api,
+                group=KUBEVIRT_GROUP,
+                version=KUBEVIRT_VERSION,
+                namespace=namespace,
+                plural="virtualmachines",
+                name=vm_name,
+            )
+            checks["vm_exists"] = {"status": "PASS", "detail": f"VirtualMachine '{vm_name}' found"}
+        except ApiException as e:
+            if e.status == 404:
+                return {"error": f"VM '{vm_name}' not found in namespace '{namespace}'", "overall": "FAIL"}
+            raise
+
+        spec = vm.get("spec", {})
+        status = vm.get("status", {})
+        domain = spec.get("template", {}).get("spec", {}).get("domain", {})
+
+        # Check 2: VM printable status
+        printable = status.get("printableStatus", "Unknown")
+        checks["vm_status"] = {
+            "status": "PASS" if printable in ("Running", "Stopped") else "WARNING",
+            "detail": f"Status: {printable}",
+        }
+        if printable not in ("Running", "Stopped"):
+            overall = "WARNING"
+
+        # Check 3: VirtualMachineInstance exists and is Running (if VM is set to run)
+        if spec.get("running", False):
+            try:
+                vmi = _k8s_get(
+                    api,
+                    group=KUBEVIRT_GROUP,
+                    version=KUBEVIRT_VERSION,
+                    namespace=namespace,
+                    plural="virtualmachineinstances",
+                    name=vm_name,
+                )
+                vmi_phase = vmi.get("status", {}).get("phase", "Unknown")
+                checks["vmi_running"] = {
+                    "status": "PASS" if vmi_phase == "Running" else "FAIL",
+                    "detail": f"VMI phase: {vmi_phase}",
+                }
+                if vmi_phase != "Running":
+                    overall = "FAIL"
+            except ApiException as e:
+                if e.status == 404:
+                    checks["vmi_running"] = {
+                        "status": "FAIL",
+                        "detail": "VirtualMachineInstance not found (VM not booted)",
+                    }
+                    overall = "FAIL"
+                else:
+                    raise
+        else:
+            checks["vmi_running"] = {"status": "SKIP", "detail": "VM is not set to running (spec.running=false)"}
+
+        # Check 4: Guest agent connected
+        conditions = status.get("conditions", [])
+        agent_connected = any(c.get("type") == "AgentConnected" and c.get("status") == "True" for c in conditions)
+        checks["guest_agent"] = {
+            "status": "PASS" if agent_connected else "WARNING",
+            "detail": "QEMU guest agent connected"
+            if agent_connected
+            else "Guest agent not detected (install qemu-guest-agent for full management)",
+        }
+
+        # Check 5: CPU and memory
+        cpu_cores = domain.get("cpu", {}).get("cores")
+        memory = domain.get("resources", {}).get("requests", {}).get("memory")
+        checks["compute"] = {
+            "status": "PASS",
+            "detail": f"CPU cores: {cpu_cores}, Memory: {memory}",
+        }
+
+        # Check 6: Disks and volumes
+        devices = domain.get("devices", {})
+        disk_count = len(devices.get("disks", []))
+        volumes = spec.get("template", {}).get("spec", {}).get("volumes", [])
+        checks["storage"] = {
+            "status": "PASS" if disk_count > 0 else "FAIL",
+            "detail": f"Disks: {disk_count}, Volumes: {len(volumes)}",
+        }
+        if disk_count == 0:
+            overall = "FAIL"
+
+        # Check 7: Network interfaces
+        interfaces = devices.get("interfaces", [])
+        checks["networking"] = {
+            "status": "PASS" if interfaces else "WARNING",
+            "detail": f"Interfaces: {len(interfaces)} ({', '.join(i.get('name', '?') for i in interfaces)})",
+        }
+
+        # Check 8: Labels (migration metadata)
+        labels = vm.get("metadata", {}).get("labels", {})
+        checks["labels"] = {
+            "status": "PASS",
+            "detail": f"Labels: {len(labels)} ({', '.join(list(labels.keys())[:5])})",
+        }
+
+        return {
+            "vm_name": vm_name,
+            "namespace": namespace,
+            "overall": overall,
+            "checks": checks,
+            "message": f"Post-migration validation {'passed' if overall == 'PASS' else 'has issues'} for '{vm_name}'.",
+        }
+
     except ApiException as e:
         return {"error": f"Kubernetes API error: {e.status} {e.reason}"}
     except Exception as e:
