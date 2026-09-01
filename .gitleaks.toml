@@ -1,14 +1,9 @@
 [extend]
 useDefault = true
 
-[[allowlist]]
-description = "SealedSecrets are encrypted and safe to commit"
+[allowlist]
+description = "Safe files: SealedSecrets (encrypted) and env example (placeholders)"
 paths = [
     '''deploy/sealed-secrets/.*\.yaml''',
-]
-
-[[allowlist]]
-description = "Example env file with placeholder values"
-paths = [
     '''\.env\.example''',
 ]
