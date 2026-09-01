@@ -10,7 +10,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/rrbanda/gadk-rhoai.git
+    repoURL: https://github.com/rrbanda/ocp-virt-migration-agent.git
     targetRevision: main
     path: deploy/chart
     helm:

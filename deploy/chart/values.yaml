@@ -9,16 +9,26 @@ nameOverride: ""
 fullnameOverride: ""
 
 env:
+  # LLM
   ADK_MODEL: ""
   OPENAI_API_BASE: ""
+  # Agent
   AGENT_MODE: "pipeline"
   SKILLS_DIR: "/skills"
   MAX_LLM_CALLS: "200"
   MIGRATION_DRY_RUN: "true"
-  DEFAULT_MTV_NAMESPACE: "mtv-user1"
-  DEFAULT_VIRT_NAMESPACE: "vmimported-user1"
+  # Multi-cluster (empty = in-cluster auth)
+  MTV_API_URL: ""
+  VIRT_API_URL: ""
+  MTV_INVENTORY_URL: ""
+  AAP_URL: ""
+  OCP_CA_BUNDLE: ""
+  # Namespace / storage defaults
+  DEFAULT_MTV_NAMESPACE: "openshift-mtv"
+  DEFAULT_VIRT_NAMESPACE: "vmimported"
   MTV_OPERATOR_NAMESPACE: "openshift-mtv"
   TARGET_STORAGE_CLASS: ""
+  # Tuning
   COMPACTION_TOKEN_THRESHOLD: "8000"
   COMPACTION_EVENT_RETENTION: "5"
   MAX_MONITOR_POLLS: "30"
@@ -53,7 +63,7 @@ openshift:
       insecureEdgeTerminationPolicy: Redirect
 
 healthCheck:
-  path: /list-apps
+  path: /health
   livenessInitialDelay: 30
   livenessPeriod: 30
   livenessTimeout: 5

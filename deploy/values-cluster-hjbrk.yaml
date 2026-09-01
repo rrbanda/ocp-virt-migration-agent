@@ -1,0 +1,24 @@
+# Per-cluster overlay: cluster-hjbrk (VMware migration workshop)
+# This cluster has MTV + OCP Virt with VMware VMs to migrate.
+
+image:
+  repository: ghcr.io/rrbanda/ocp-virt-migration-agent
+  tag: "latest"
+
+env:
+  # LLM -- Gemini via OpenAI-compatible API
+  ADK_MODEL: "gemini/gemini-2.5-flash"
+  OPENAI_API_BASE: "https://generativelanguage.googleapis.com/v1beta/openai"
+  # Multi-cluster -- agent talks to cluster-hjbrk for MTV/Virt
+  MTV_API_URL: "https://api.cluster-hjbrk.dyn.redhatworkshops.io:6443"
+  VIRT_API_URL: "https://api.cluster-hjbrk.dyn.redhatworkshops.io:6443"
+  MTV_INVENTORY_URL: "https://forklift-inventory-openshift-mtv.apps.cluster-hjbrk.dyn.redhatworkshops.io"
+  OCP_CA_BUNDLE: "false"
+  # Namespaces
+  DEFAULT_MTV_NAMESPACE: "mtv-user1"
+  DEFAULT_VIRT_NAMESPACE: "vmimported-user1"
+  MTV_OPERATOR_NAMESPACE: "openshift-mtv"
+  TARGET_STORAGE_CLASS: "ocs-external-storagecluster-ceph-rbd"
+  # Safety
+  MIGRATION_DRY_RUN: "true"
+  AGENT_MODE: "pipeline"
