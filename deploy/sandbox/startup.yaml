@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ocp-virt-migration-agent-startup
+  labels:
+    app.kubernetes.io/part-of: ocp-virt-migration-agent
+data:
+  startup.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    export HOME=/sandbox
+    export PYTHONPATH=/sandbox
+    export PATH="/opt/app-root/bin:/usr/local/bin:${PATH}"
+
+    echo "=== OCP Virt Migration Agent startup ==="
+
+    # Copy app code from image to workspace PVC (first run only)
+    if [ ! -f /sandbox/app/__init__.py ]; then
+      echo "Copying app code to workspace..."
+      cp -a /opt/app-root/src/app /sandbox/app 2>/dev/null || cp -a /sandbox/app /sandbox/app 2>/dev/null || true
+    fi
+
+    # Copy skills from image to workspace
+    if [ -d /skills ] && [ "$(ls -A /skills 2>/dev/null)" ]; then
+      echo "Copying skills to workspace..."
+      mkdir -p /sandbox/skills
+      cp -a /skills/* /sandbox/skills/ 2>/dev/null || true
+      echo "Skills: $(ls /sandbox/skills/ | wc -l) loaded"
+    fi
+
+    echo "SKILLS_DIR=${SKILLS_DIR:-/sandbox/skills}"
+    echo "ADK_MODEL=${ADK_MODEL:-not set}"
+    echo "AGENT_MODE=${AGENT_MODE:-pipeline}"
+    echo "MIGRATION_DRY_RUN=${MIGRATION_DRY_RUN:-true}"
+    echo "MTV_API_URL=${MTV_API_URL:-in-cluster}"
+
+    echo "=== Starting uvicorn on port ${PORT:-8080} ==="
+    exec uvicorn app.api:fastapi_app \
+      --host 0.0.0.0 \
+      --port "${PORT:-8080}" \
+      --no-access-log

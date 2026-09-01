@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sandbox-restart
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: openshell-sandbox
+      containers:
+      - name: restart
+        image: registry.redhat.io/openshift4/ose-cli:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "PostSync: rolling sandbox pod to load synced ConfigMaps"
+          if oc get pod ocp-virt-migration-agent -n ocp-virt-agent >/dev/null 2>&1; then
+            oc delete pod ocp-virt-migration-agent -n ocp-virt-agent --wait=false
+            echo "Pod delete issued; Sandbox controller will recreate it."
+          else
+            echo "No pod present yet; Sandbox controller will create it."
+          fi

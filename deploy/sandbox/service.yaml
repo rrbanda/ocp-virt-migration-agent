@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocp-virt-migration-agent
+  labels:
+    app: ocp-virt-migration-agent
+    app.kubernetes.io/part-of: ocp-virt-migration-agent
+spec:
+  selector:
+    app: ocp-virt-migration-agent
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP

@@ -1,0 +1,112 @@
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+    - /lib
+    - /lib64
+    - /bin
+    - /sbin
+    - /etc
+    - /var/log
+    - /proc
+    - /dev/urandom
+    - /opt/openshell
+  read_write:
+    - /sandbox
+    - /tmp
+    - /dev/null
+    - /dev/pts
+    - /mnt
+    - /run
+    - /opt/app-root
+
+landlock:
+  compatibility: best_effort
+
+process:
+  run_as_user: ""
+  run_as_group: ""
+
+network_policies:
+  gemini_api:
+    name: Gemini API (LLM inference)
+    endpoints:
+      - host: generativelanguage.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: full
+    binaries:
+      - path: /**
+
+  mtv_cluster_api:
+    name: VMware/OCP Virt cluster API (MTV + KubeVirt)
+    endpoints:
+      - host: api.cluster-hjbrk.dyn.redhatworkshops.io
+        port: 6443
+        protocol: rest
+        enforcement: enforce
+        access: full
+    binaries:
+      - path: /**
+
+  mtv_inventory:
+    name: Forklift inventory API
+    endpoints:
+      - host: forklift-inventory-openshift-mtv.apps.cluster-hjbrk.dyn.redhatworkshops.io
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: full
+    binaries:
+      - path: /**
+
+  openshell_gateway:
+    name: OpenShell gateway
+    endpoints:
+      - host: openshell.openshell.svc.cluster.local
+        port: 8080
+        protocol: rest
+        enforcement: enforce
+        access: full
+    binaries:
+      - path: /**
+
+  cluster_dns:
+    name: Cluster DNS
+    endpoints:
+      - host: "172.30.0.10"
+        port: 53
+      - host: "172.30.0.10"
+        port: 5353
+    binaries:
+      - path: /**
+
+  pypi:
+    name: Python Package Index (runtime installs)
+    endpoints:
+      - host: pypi.org
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: full
+      - host: files.pythonhosted.org
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: full
+    binaries:
+      - path: /**
+
+  ghcr:
+    name: GitHub Container Registry (image pulls)
+    endpoints:
+      - host: ghcr.io
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: full
+    binaries:
+      - path: /**
