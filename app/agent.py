@@ -336,18 +336,8 @@ def _build_workflow():
         name="BatchPlannerAgent",
         model=model,
         instruction=(
-            "You plan batch migrations for multiple VMs.\n\n"
-            "Load the `batch-planner` and `risk-assessor` skills. Given the list "
-            "of VMs, group them into batches by risk, OS, and dependencies.\n\n"
-            "Consider cluster capacity using the `capacity-analyzer` skill.\n\n"
-            "## Smart Scheduling\n"
-            "Suggest optimal migration windows based on:\n"
-            "- Batch size (5-10 VMs per batch)\n"
-            "- Risk diversity (don't put all high-risk VMs in one batch)\n"
-            "- OS diversity (spread OS types across batches)\n"
-            "- Timeline (24h between batches for validation)\n"
-            "- Off-peak hours for production VMs\n\n"
-            "Output a structured batch plan with timeline."
+            "Load the `batch-planner`, `risk-assessor`, and `capacity-analyzer` skills. "
+            "Follow their guidance to group VMs into migration batches."
         ),
         tools=[list_vmware_vms, *skill_tools],
         output_key="batch_plan",
@@ -358,9 +348,8 @@ def _build_workflow():
         name="DiscoveryAgent",
         model=model,
         instruction=(
-            "Discover VMware VMs for migration.\n"
-            f"Call `list_vmware_vms` (default namespace: {DEFAULT_MTV_NAMESPACE}). "
-            "Output the full VM inventory as structured JSON."
+            "Load the `migration-workflow` skill and execute Phase 1: DISCOVER. "
+            f"Call `list_vmware_vms` (default namespace: {DEFAULT_MTV_NAMESPACE})."
         ),
         tools=[list_vmware_vms],
         output_schema=InventoryOutput,
@@ -378,11 +367,11 @@ def _build_workflow():
         name="AssessmentAgent",
         model=model,
         instruction=(
-            "Analyze migration readiness.\n"
-            "VM inventory is in session state 'vm_inventory'.\n"
+            "Load the `pre-migration-analyzer` skill and follow its instructions. "
+            "Also load `risk-assessor` for risk scoring. "
+            "VM inventory is in session state 'vm_inventory'. "
             f"{_pre_hint}"
-            "Load ansible-output-parser, pre-migration-analyzer, risk-assessor skills.\n"
-            "Output verdict: READY or NOT READY with risk rating and details."
+            "If AAP output is available, also load `ansible-output-parser`."
         ),
         tools=[launch_job, get_job_status, get_job_output, *skill_tools],
         output_schema=AssessmentOutput,
@@ -395,10 +384,9 @@ def _build_workflow():
         name="MigrationAgent",
         model=model,
         instruction=(
-            "Execute the approved migration.\n"
-            "The user has approved the migration plan. Call execute_migration with the "
-            "plan_name and namespace from session state 'migration_id'.\n"
-            "For cold migration, leave cutover empty. For warm migration, provide cutover time."
+            "Load the `migration-workflow` skill, Phase 4: MIGRATE. "
+            "The user has approved. Call execute_migration with plan_name and namespace "
+            "from session state. Refer to the skill for warm vs cold cutover guidance."
         ),
         tools=[execute_tool],
         before_tool_callback=migration_safety_callback,
@@ -410,10 +398,9 @@ def _build_workflow():
         name="StatusPoller",
         model=model,
         instruction=(
-            "Monitor the in-progress migration.\n"
-            "Call get_migration_status. Report phase, VMs completed/running/failed.\n"
-            "If errors, call get_pod_logs and load mtv-log-analyzer skill.\n"
-            "Output a status summary."
+            "Load the `migration-workflow` skill, Phase 5: MONITOR. "
+            "Call get_migration_status. If errors appear, load `mtv-log-analyzer` skill "
+            "and call get_pod_logs for diagnosis."
         ),
         tools=[get_migration_status, get_pod_logs, *skill_tools],
         output_schema=StatusOutput,
@@ -430,11 +417,10 @@ def _build_workflow():
         name="ValidationAgent",
         model=model,
         instruction=(
-            "Validate post-migration results.\n"
+            "Load the `post-migration-validator` skill and follow its instructions. "
+            "Call validate_migrated_vm for automated checks. "
+            "Compare results against source inventory in 'vm_inventory'. "
             f"{_post_hint}"
-            "Call validate_migrated_vm to run comprehensive checks (boot, guest agent, storage, networking).\n"
-            "Compare migrated VM against source inventory in 'vm_inventory'.\n"
-            "Load post-migration-validator skill. Output PASS or FAIL verdict."
         ),
         tools=[
             validate_migrated_vm,
@@ -453,11 +439,9 @@ def _build_workflow():
         name="RollbackAgent",
         model=model,
         instruction=(
-            "The migration has failed. Clean up the created resources.\n"
-            "Read 'migration_id' from session state to get the plan name and namespace.\n"
-            "Call rollback_migration to delete the Migration, Plan, StorageMap, "
-            "and NetworkMap CRs. Then call record_migration to save the failure record.\n"
-            "Output what was cleaned up and the failure details."
+            "Load the `migration-workflow` skill for error handling guidance. "
+            "Call rollback_migration with the plan name from session state 'migration_id'. "
+            "Then call record_migration to save the failure record."
         ),
         tools=[rollback_tool, record_migration],
         output_key="rollback_result",
@@ -467,12 +451,9 @@ def _build_workflow():
         name="ReporterAgent",
         model=model,
         instruction=(
-            "Generate a formal migration report from session state.\n"
-            "Load the completion-report-generator skill.\n"
-            "Include: summary, before/after comparison, assessment, timeline, "
-            "validation results, outstanding items, sign-off.\n"
-            "Call save_report_artifact to persist the report.\n"
-            "Call record_migration to save the outcome to history."
+            "Load the `completion-report-generator` skill and follow its report template. "
+            "Use session state for all data. Call save_report_artifact to persist the report. "
+            "Call record_migration to save the outcome."
         ),
         tools=[save_report_artifact, record_migration, *skill_tools],
         output_schema=ReportOutput,
