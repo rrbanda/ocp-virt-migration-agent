@@ -11,6 +11,7 @@ resources:
   - route.yaml
   - restart-hook.yaml
   - restart-rbac.yaml
+  - mlflow-rbac.yaml
   - agent-secrets.yaml
   - openshell-client-tls.yaml
 
