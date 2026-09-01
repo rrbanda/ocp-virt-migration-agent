@@ -61,7 +61,8 @@ def check_cluster_readiness(namespace: str) -> dict:
     try:
         from kubernetes import client as k8s_client
 
-        storage_api = k8s_client.StorageV1Api(api_client=virt_core_api()._api_client if virt_core_api() else None)
+        core = virt_core_api()
+        storage_api = k8s_client.StorageV1Api(api_client=core.api_client if core else None)
         scs = storage_api.list_storage_class()
         sc_names = [sc.metadata.name for sc in scs.items]
         has_default = any(

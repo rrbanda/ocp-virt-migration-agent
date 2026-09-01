@@ -61,12 +61,22 @@ class Choice(BaseModel):
     finish_reason: str
 
 
+class PendingAction(BaseModel):
+    """HITL interrupt details -- present when the workflow paused for human input."""
+
+    type: str = "human_approval"
+    interrupt_id: str
+    message: str
+
+
 class ChatCompletionResponse(BaseModel):
     id: str
     object: str = "chat.completion"
     created: int
     model: str
     choices: list[Choice]
+    session_id: str | None = None
+    pending_action: PendingAction | None = None
     context: list[dict] | None = None
     usage: dict | None = None
 
@@ -157,9 +167,10 @@ async def _non_stream(user_text: str, model_id: str, session_id: str | None = No
 
         all_text_parts: list[str] = []
         context: list[dict] = []
+        pending_action: dict | None = None
 
         async def _run():
-            nonlocal all_text_parts
+            nonlocal all_text_parts, pending_action
             async for event in _runner.run_async(
                 user_id=USER_ID,
                 session_id=session_id,
@@ -170,18 +181,24 @@ async def _non_stream(user_text: str, model_id: str, session_id: str | None = No
                     continue
                 for part in event.content.parts:
                     if part.function_call:
+                        fc_name = part.function_call.name
+                        fc_args = dict(part.function_call.args) if part.function_call.args else {}
+                        if fc_name == "adk_request_input":
+                            pending_action = {
+                                "type": "human_approval",
+                                "interrupt_id": fc_args.get("interruptId", ""),
+                                "message": fc_args.get("message", ""),
+                            }
                         context.append(
                             {
                                 "role": "assistant",
-                                "content": f"Calling tool: {part.function_call.name}",
+                                "content": f"Calling tool: {fc_name}",
                                 "tool_calls": [
                                     {
                                         "type": "function",
                                         "function": {
-                                            "name": part.function_call.name,
-                                            "arguments": json.dumps(
-                                                dict(part.function_call.args) if part.function_call.args else {}
-                                            ),
+                                            "name": fc_name,
+                                            "arguments": json.dumps(fc_args),
                                         },
                                     }
                                 ],
@@ -211,6 +228,7 @@ async def _non_stream(user_text: str, model_id: str, session_id: str | None = No
         await asyncio.wait_for(_run(), timeout=_REQUEST_TIMEOUT)
 
         final_text = "\n\n".join(all_text_parts) if all_text_parts else ""
+        finish_reason = "requires_action" if pending_action else "stop"
 
         return {
             "id": _completion_id(),
@@ -221,9 +239,11 @@ async def _non_stream(user_text: str, model_id: str, session_id: str | None = No
                 {
                     "index": 0,
                     "message": {"role": "assistant", "content": final_text},
-                    "finish_reason": "stop",
+                    "finish_reason": finish_reason,
                 }
             ],
+            "session_id": session_id,
+            "pending_action": pending_action,
             "context": context,
             "usage": None,
         }
@@ -294,6 +314,7 @@ async def _stream(user_text: str, model_id: str, session_id: str | None = None) 
                 "created": created,
                 "model": model_id,
                 "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                "session_id": sid,
             }
             yield f"data: {json.dumps(done_chunk)}\n\n"
             yield "data: [DONE]\n\n"

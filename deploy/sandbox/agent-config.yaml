@@ -64,30 +64,38 @@ data:
         instruction: |
           You handle the full pre-migration workflow: discovery, assessment, and plan creation.
 
-          IMPORTANT: The VMware provider lives in the MTV namespace ({mtv_namespace}), NOT the target namespace.
-          Always use namespace={mtv_namespace} for list_vmware_vms and create_migration_plan.
-          The target_namespace for migrated VMs is {virt_namespace}.
+          ## CRITICAL: Target VM
+          The pipeline input contains the target VM name (e.g., "PIPELINE: haproxy-user1").
+          Extract the VM name and focus ONLY on that VM for all phases.
+          Do NOT assess or plan for other VMs.
+
+          ## CRITICAL: Namespaces
+          The VMware provider lives in the MTV namespace ({mtv_namespace}), NOT the target namespace.
+          - Use namespace="{mtv_namespace}" for list_vmware_vms and create_migration_plan.
+          - Use target_namespace="{virt_namespace}" for the migration target.
 
           ## Phase 1: DISCOVER
-          Load the `migration-workflow` skill. Call `list_vmware_vms(namespace="{mtv_namespace}")`.
-          Summarize the VM inventory: name, OS, CPU, memory, disk size, networks.
+          Call `list_vmware_vms(namespace="{mtv_namespace}")`.
+          Find the target VM in the results. Extract its specs: name, OS, CPU, memory, disk, networks, firmware.
 
           ## Phase 2: ASSESS
           Load the `pre-migration-analyzer` and `risk-assessor` skills.
           {aap_hint}
-          If AAP output is available, also load `ansible-output-parser`.
-          Evaluate each VM against the pre-migration checklist. Score risks.
-          Check cluster readiness via `check_cluster_readiness`.
+          Evaluate ONLY the target VM against the readiness checklist.
+          Check cluster readiness via `check_cluster_readiness(namespace="{mtv_namespace}")`.
+          If the VM is NOT READY, end with "VERDICT: NOT READY -- <reason>" and stop.
 
-          ## Phase 3: CREATE PLAN
-          Load the `migration-workflow` skill Phase 3. For VMs that pass assessment,
-          call `create_migration_plan` with appropriate parameters (cold vs warm based
-          on assessment). Include VM specs, network mappings, and storage class in your output.
+          ## Phase 3: CREATE PLAN (MANDATORY if VM is READY)
+          You MUST call `create_migration_plan` before finishing. If you skip this, the migration cannot proceed.
+          Call: create_migration_plan(namespace="{mtv_namespace}", vm_name="<target_vm>", plan_name="", target_namespace="{virt_namespace}", warm="false")
+          - Set warm="true" only if assessment recommends warm migration and CBT prerequisites are met.
+          - Leave plan_name="" to auto-generate.
+          Wait for the tool to return plan details and validation status.
 
           ## Output format
           End your response with a clear verdict line:
           - "VERDICT: READY -- Plan '<plan_name>' created for <vm_name>" if plan was created successfully
-          - "VERDICT: NOT READY -- <reason>" if VM fails assessment
+          - "VERDICT: NOT READY -- <reason>" if VM fails assessment or plan validation fails
 
           Include the full plan details (VM specs, mappings, migration type) so the
           human reviewer can make an informed approval decision.
@@ -97,18 +105,20 @@ data:
         instruction: |
           You handle migration execution and status monitoring.
 
+          ## CRITICAL: Extract plan details from session state
+          The pre_migration_result in session state contains the plan_name and namespace.
+          Look for "plan_name" or "Plan '" in the pre-migration output to find the plan name.
+          The MTV namespace is {mtv_namespace}.
+
           ## Phase 4: EXECUTE
-          Load the `migration-workflow` skill Phase 4.
-          The user has approved the migration. Call `execute_migration` with the plan_name
-          and namespace from the pre-migration result. For warm migrations, set the cutover
-          time if specified.
+          Call `execute_migration(namespace="{mtv_namespace}", plan_name="<plan_name>", cutover="")`.
+          - Leave cutover="" for cold migration (immediate).
+          - For warm migration, set cutover to an RFC 3339 timestamp if specified by the user.
 
           ## Phase 5: MONITOR
-          After execution starts, call `get_migration_status` to check progress.
-          If errors appear, load the `mtv-log-analyzer` skill and call `get_pod_logs`
-          for diagnosis.
-
-          Report the current status clearly: running, completed, or failed with details.
+          After execution starts, call `get_migration_status(namespace="{mtv_namespace}")`.
+          Report the status: if "Running" include VM progress counts; if "Completed" or "Failed" report clearly.
+          If errors appear, load the `mtv-log-analyzer` skill and call `get_pod_logs(namespace="openshift-mtv", pod_pattern="forklift", tail_lines=50)` for diagnosis.
 
       PostMigrationAgent:
         model: reasoning

@@ -73,3 +73,53 @@ class TestChatCompletions:
                 },
             )
             assert resp.status_code == 503
+
+
+class TestResponseSchema:
+    """Verify the response model includes session_id and pending_action fields."""
+
+    def test_response_model_has_session_id(self):
+        from app.api import ChatCompletionResponse
+
+        fields = ChatCompletionResponse.model_fields
+        assert "session_id" in fields
+        assert "pending_action" in fields
+
+    def test_pending_action_model(self):
+        from app.api import PendingAction
+
+        action = PendingAction(interrupt_id="migration_approval", message="Approve?")
+        assert action.type == "human_approval"
+        assert action.interrupt_id == "migration_approval"
+        assert action.message == "Approve?"
+
+    def test_response_with_pending_action(self):
+        from app.api import ChatCompletionResponse, Choice, ChoiceMessage, PendingAction
+
+        resp = ChatCompletionResponse(
+            id="test-1",
+            created=1000,
+            model="test",
+            choices=[Choice(index=0, message=ChoiceMessage(content="Plan created"), finish_reason="requires_action")],
+            session_id="sess-123",
+            pending_action=PendingAction(interrupt_id="migration_approval", message="Approve migration?"),
+        )
+        data = resp.model_dump()
+        assert data["session_id"] == "sess-123"
+        assert data["choices"][0]["finish_reason"] == "requires_action"
+        assert data["pending_action"]["interrupt_id"] == "migration_approval"
+
+    def test_response_without_pending_action(self):
+        from app.api import ChatCompletionResponse, Choice, ChoiceMessage
+
+        resp = ChatCompletionResponse(
+            id="test-2",
+            created=1000,
+            model="test",
+            choices=[Choice(index=0, message=ChoiceMessage(content="Hello"), finish_reason="stop")],
+            session_id="sess-456",
+        )
+        data = resp.model_dump()
+        assert data["session_id"] == "sess-456"
+        assert data["pending_action"] is None
+        assert data["choices"][0]["finish_reason"] == "stop"
