@@ -47,48 +47,42 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
-            {{- if .Values.secrets.openaiApiKey }}
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "agent.fullname" . }}-secret
                   key: openai-api-key
-            {{- end }}
-            {{- if .Values.secrets.geminiApiKey }}
+                  optional: true
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "agent.fullname" . }}-secret
                   key: gemini-api-key
-            {{- end }}
-            {{- if .Values.secrets.mtvApiToken }}
+                  optional: true
             - name: MTV_API_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ include "agent.fullname" . }}-secret
                   key: mtv-api-token
-            {{- end }}
-            {{- if .Values.secrets.virtApiToken }}
+                  optional: true
             - name: VIRT_API_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ include "agent.fullname" . }}-secret
                   key: virt-api-token
-            {{- end }}
-            {{- if .Values.secrets.aapToken }}
+                  optional: true
             - name: AAP_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ include "agent.fullname" . }}-secret
                   key: aap-token
-            {{- end }}
-            {{- if .Values.secrets.mlflowTrackingToken }}
+                  optional: true
             - name: MLFLOW_TRACKING_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ include "agent.fullname" . }}-secret
                   key: mlflow-tracking-token
-            {{- end }}
+                  optional: true
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           livenessProbe:
