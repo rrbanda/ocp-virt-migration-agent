@@ -33,15 +33,20 @@ import logging
 import os
 import pathlib
 
-from google.adk import Event, Workflow
 from google.adk.agents import LlmAgent
+from google.adk.agents.context import Context
 from google.adk.agents.run_config import RunConfig, StreamingMode
-from google.adk.apps.app import App, EventsCompactionConfig
-from google.adk.events import RequestInput
+from google.adk.apps import App, ResumabilityConfig
+from google.adk.apps.app import EventsCompactionConfig
+from google.adk.events.event import Event
+from google.adk.events.request_input import RequestInput
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.skills import load_skill_from_dir
 from google.adk.tools import FunctionTool
 from google.adk.tools.skill_toolset import SkillToolset
+from google.adk.workflow import Workflow
+from google.genai import types as genai_types
+from pydantic import BaseModel, Field
 
 from .callbacks import migration_safety_callback
 from .shared.cluster_clients import DEFAULT_MTV_NAMESPACE, DEFAULT_VIRT_NAMESPACE
@@ -82,7 +87,7 @@ AGENT_NAME = os.environ.get("AGENT_NAME", "migration_coordinator")
 APP_NAME = "app"
 AGENT_MODE = os.environ.get("AGENT_MODE", "pipeline")
 MAX_LLM_CALLS = int(os.environ.get("MAX_LLM_CALLS", "200"))
-COMPACTION_TOKEN_THRESHOLD = int(os.environ.get("COMPACTION_TOKEN_THRESHOLD", "8000"))
+COMPACTION_TOKEN_THRESHOLD = int(os.environ.get("COMPACTION_TOKEN_THRESHOLD", "16000"))
 COMPACTION_EVENT_RETENTION = int(os.environ.get("COMPACTION_EVENT_RETENTION", "5"))
 AGENT_DESC = os.environ.get(
     "AGENT_DESC",
@@ -134,15 +139,45 @@ log.info("Discovered %d skills from %s", len(skills), SKILLS_DIR)
 
 
 # ---------------------------------------------------------------------------
-# Graph router functions
+# Pydantic output schemas for workflow agents (ADK best practice)
+# ---------------------------------------------------------------------------
+class DispatcherOutput(BaseModel):
+    action: str = Field(description="PIPELINE:<vm> in <ns>, BATCH:<vms> in <ns>, or the complete answer")
+
+
+class InventoryOutput(BaseModel):
+    inventory: str = Field(description="JSON inventory of discovered VMs")
+
+
+class AssessmentOutput(BaseModel):
+    verdict: str = Field(description="READY or NOT READY with risk rating and details")
+
+
+class MigrationOutput(BaseModel):
+    result: str = Field(description="Migration plan name, migration name, and status")
+
+
+class StatusOutput(BaseModel):
+    status: str = Field(description="Migration phase and VM progress summary")
+
+
+class ValidationOutput(BaseModel):
+    result: str = Field(description="PASS or FAIL with comparison details")
+
+
+class ReportOutput(BaseModel):
+    report: str = Field(description="Formal migration report content")
+
+
+# ---------------------------------------------------------------------------
+# Graph router functions (use ctx.state for per-session data, not globals)
 # ---------------------------------------------------------------------------
 _MAX_MONITOR_POLLS = int(os.environ.get("MAX_MONITOR_POLLS", "30"))
-_monitor_poll_count = 0
 
 
-def intent_router(node_input: str):
+def intent_router(node_input: dict):
     """Route dispatcher output: pipeline, batch, or done (ad-hoc answer)."""
-    text = str(node_input).upper()
+    text = str(node_input.get("action", node_input) if isinstance(node_input, dict) else node_input).upper()
     if "PIPELINE" in text or "FULL MIGRATION" in text or "RUN MIGRATION" in text:
         return Event(route="pipeline", output=node_input)
     if "BATCH" in text or "MULTIPLE VMS" in text:
@@ -150,55 +185,61 @@ def intent_router(node_input: str):
     return Event(route="done", output=node_input)
 
 
-def readiness_router(node_input: str):
+def readiness_router(node_input: dict):
     """Deterministic: skip migration if assessment says NOT READY."""
-    if "NOT READY" in str(node_input).upper():
+    text = str(node_input.get("verdict", node_input) if isinstance(node_input, dict) else node_input)
+    if "NOT READY" in text.upper():
         log.info("[Router] NOT READY -- skipping to report")
         return Event(route="not_ready", output=node_input)
     log.info("[Router] READY -- proceeding to approval")
     return Event(route="ready", output=node_input)
 
 
-def migration_approval():
+async def migration_approval(ctx: Context, node_input):
     """HITL: pause for human approval before triggering real migration."""
-    yield RequestInput(
-        message=(
-            "The VM has been assessed as READY for migration. "
-            "Do you approve proceeding with the VMware-to-OCP Virtualization "
-            "migration? (Type 'yes' to approve or 'no' to cancel)"
+    if not ctx.resume_inputs:
+        yield RequestInput(
+            interrupt_id="migration_approval",
+            message=(
+                "The VM has been assessed as READY for migration. "
+                "Do you approve proceeding with the VMware-to-OCP Virtualization "
+                "migration? (Type 'yes' to approve or 'no' to cancel)"
+            ),
         )
-    )
+        return
+    yield Event(output=ctx.resume_inputs.get("migration_approval", "no"))
 
 
-def approval_router(node_input: str):
+def approval_router(node_input):
     """Route based on human yes/no response."""
-    if str(node_input).strip().lower() in ("yes", "y", "approve", "approved", "proceed"):
+    text = str(node_input).strip().lower()
+    if text in ("yes", "y", "approve", "approved", "proceed"):
         log.info("[Router] Migration APPROVED")
         return Event(route="approved", output=node_input)
     log.info("[Router] Migration REJECTED")
     return Event(route="rejected", output=node_input)
 
 
-def monitor_router(node_input: str):
-    """Route monitor loop: completed/failed/running. Exits after MAX_MONITOR_POLLS polls."""
-    global _monitor_poll_count
-    _monitor_poll_count += 1
+def monitor_router(ctx: Context, node_input: dict):
+    """Route monitor loop: completed/failed/running. Per-session poll counter via ctx.state."""
+    count = ctx.state.get("temp:monitor_poll_count", 0) + 1
+    status = str(node_input.get("status", node_input) if isinstance(node_input, dict) else node_input)
 
-    status = str(node_input)
     if any(kw in status for kw in ("Failed", "Error", "Canceled", "Cancelled")):
         log.info("[Router] Migration FAILED")
-        _monitor_poll_count = 0
-        return Event(route="failed", output=status)
+        return Event(route="failed", output=status, state={"temp:monitor_poll_count": 0})
     if any(kw in status for kw in ("Completed", "Succeeded")):
         log.info("[Router] Migration COMPLETED")
-        _monitor_poll_count = 0
-        return Event(route="completed", output=status)
-    if _monitor_poll_count >= _MAX_MONITOR_POLLS:
+        return Event(route="completed", output=status, state={"temp:monitor_poll_count": 0})
+    if count >= _MAX_MONITOR_POLLS:
         log.warning("[Router] Monitor poll limit reached (%d), treating as failed", _MAX_MONITOR_POLLS)
-        _monitor_poll_count = 0
-        return Event(route="failed", output=f"{status} (monitor timeout after {_MAX_MONITOR_POLLS} polls)")
-    log.info("[Router] Migration still running (poll %d/%d)", _monitor_poll_count, _MAX_MONITOR_POLLS)
-    return Event(route="running", output=status)
+        return Event(
+            route="failed",
+            output=f"{status} (monitor timeout after {_MAX_MONITOR_POLLS} polls)",
+            state={"temp:monitor_poll_count": 0},
+        )
+    log.info("[Router] Migration still running (poll %d/%d)", count, _MAX_MONITOR_POLLS)
+    return Event(route="running", output=status, state={"temp:monitor_poll_count": count})
 
 
 # ---------------------------------------------------------------------------
@@ -206,15 +247,19 @@ def monitor_router(node_input: str):
 # ---------------------------------------------------------------------------
 def _build_workflow():
     """Build the ADK 2.0 Hybrid Workflow graph."""
-    model = LiteLlm(model=ADK_MODEL)
+    if ADK_MODEL.startswith("gemini") and "/" not in ADK_MODEL:
+        model = ADK_MODEL
+    else:
+        model = LiteLlm(model=ADK_MODEL)
     skill_tools = [SkillToolset(skills=skills)] if skills else []
-    migration_tool = FunctionTool(create_migration_plan)
+    migration_tool = FunctionTool(create_migration_plan, require_confirmation=True)
     rollback_tool = FunctionTool(rollback_migration, require_confirmation=True)
 
     # -- Dispatcher: handles ad-hoc queries with all tools -----------------
     dispatcher = LlmAgent(
         name="Dispatcher",
         model=model,
+        generate_content_config=genai_types.GenerateContentConfig(temperature=0.2),
         instruction=(
             "You are the Migration Coordinator for VMware-to-OpenShift Virtualization.\n\n"
             "## How to respond\n"
@@ -268,6 +313,7 @@ def _build_workflow():
             *skill_tools,
         ],
         before_tool_callback=migration_safety_callback,
+        output_schema=DispatcherOutput,
         output_key="dispatch_result",
     )
 
@@ -311,6 +357,7 @@ def _build_workflow():
             "Output the full VM inventory as structured JSON."
         ),
         tools=[list_vmware_vms],
+        output_schema=InventoryOutput,
         output_key="vm_inventory",
     )
 
@@ -332,6 +379,7 @@ def _build_workflow():
             "Output verdict: READY or NOT READY with risk rating and details."
         ),
         tools=[launch_job, get_job_status, get_job_output, *skill_tools],
+        output_schema=AssessmentOutput,
         output_key="readiness_verdict",
     )
 
@@ -345,6 +393,7 @@ def _build_workflow():
         ),
         tools=[migration_tool],
         before_tool_callback=migration_safety_callback,
+        output_schema=MigrationOutput,
         output_key="migration_id",
     )
 
@@ -358,6 +407,7 @@ def _build_workflow():
             "Output a status summary."
         ),
         tools=[get_migration_status, get_pod_logs, *skill_tools],
+        output_schema=StatusOutput,
         output_key="migration_status",
     )
 
@@ -377,6 +427,7 @@ def _build_workflow():
             "Load post-migration-validator skill. Output PASS or FAIL verdict."
         ),
         tools=[list_migrated_vms, get_vm_details, launch_job, get_job_status, get_job_output, *skill_tools],
+        output_schema=ValidationOutput,
         output_key="validation_result",
     )
 
@@ -406,6 +457,7 @@ def _build_workflow():
             "Call record_migration to save the outcome to history."
         ),
         tools=[save_report_artifact, record_migration, *skill_tools],
+        output_schema=ReportOutput,
         output_key="final_report",
     )
 
@@ -461,6 +513,10 @@ _SINGLE_INSTRUCTION = (
 
 def _build_single_agent() -> LlmAgent:
     """Build the legacy single-agent fallback."""
+    if ADK_MODEL.startswith("gemini") and "/" not in ADK_MODEL:
+        model = ADK_MODEL
+    else:
+        model = LiteLlm(model=ADK_MODEL)
     migration_tool = FunctionTool(create_migration_plan, require_confirmation=True)
     rollback_tool = FunctionTool(rollback_migration, require_confirmation=True)
     skill_tools = [SkillToolset(skills=skills)] if skills else []
@@ -485,7 +541,7 @@ def _build_single_agent() -> LlmAgent:
     ]
 
     return LlmAgent(
-        model=LiteLlm(model=ADK_MODEL),
+        model=model,
         name=os.environ.get("AGENT_NAME", "migration_agent"),
         description=AGENT_DESC,
         instruction=_SINGLE_INSTRUCTION,
@@ -517,6 +573,7 @@ app = App(
     name=APP_NAME,
     root_agent=root_agent,
     plugins=[MigrationLoggingPlugin()],
+    resumability_config=ResumabilityConfig(is_resumable=True),
     events_compaction_config=EventsCompactionConfig(
         token_threshold=COMPACTION_TOKEN_THRESHOLD,
         event_retention_size=COMPACTION_EVENT_RETENTION,

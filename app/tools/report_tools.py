@@ -25,7 +25,6 @@ async def save_report_artifact(report_content: str, filename: str, tool_context:
     Args:
         report_content: The full report text in Markdown format.
         filename: Filename for the artifact (e.g. 'migration-report.md').
-        tool_context: Injected by ADK runtime -- do not pass manually.
 
     Returns:
         Dictionary with status, filename, and artifact version number.

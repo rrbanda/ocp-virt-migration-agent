@@ -45,7 +45,7 @@ class TestLaunchJob:
         import app.tools.aap_tools
 
         reload(app.tools.aap_tools)
-        result = app.tools.aap_tools.launch_job(template_id=1)
+        result = app.tools.aap_tools.launch_job(template_id=1, extra_vars="{}")
         assert "error" in result
 
     @patch.dict(os.environ, {"AAP_URL": "https://aap.example.com", "AAP_TOKEN": "test-token"})
@@ -59,7 +59,7 @@ class TestLaunchJob:
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"id": 42, "status": "pending"}
         with patch.object(app.tools.aap_tools, "_post", return_value=mock_resp):
-            result = app.tools.aap_tools.launch_job(template_id=1)
+            result = app.tools.aap_tools.launch_job(template_id=1, extra_vars="{}")
         assert result["job_id"] == 42
 
 

@@ -135,7 +135,7 @@ def _resolve_inventory(mtv_api) -> tuple[str, str]:
     return inv_url, token
 
 
-def list_vmware_vms(namespace: str = "") -> dict:
+def list_vmware_vms(namespace: str) -> dict:
     """List VMs from VMware vSphere via the MTV Forklift inventory.
 
     Queries the MTV inventory API to discover VMware VMs available for
@@ -204,7 +204,7 @@ def list_vmware_vms(namespace: str = "") -> dict:
         return {"error": f"Error querying VMware inventory: {e!s}"}
 
 
-def list_migrated_vms(namespace: str = "") -> dict:
+def list_migrated_vms(namespace: str) -> dict:
     """List VMs that have been migrated to OCP Virtualization.
 
     Args:
@@ -301,7 +301,7 @@ def get_vm_details(namespace: str, vm_name: str) -> dict:
         return {"error": f"Error: {e!s}"}
 
 
-def get_migration_status(namespace: str = "") -> dict:
+def get_migration_status(namespace: str) -> dict:
     """Get status of MTV migrations in a namespace.
 
     Args:
@@ -376,8 +376,8 @@ def get_migration_status(namespace: str = "") -> dict:
 def create_migration_plan(
     namespace: str,
     vm_name: str,
-    plan_name: str = "",
-    target_namespace: str = "",
+    plan_name: str,
+    target_namespace: str,
 ) -> dict:
     """Create an MTV migration plan and trigger it for a VMware VM.
 
@@ -651,7 +651,7 @@ def create_migration_plan(
         return {"error": f"Error creating migration: {e!s}"}
 
 
-def get_pod_logs(namespace: str, pod_pattern: str = "forklift", tail_lines: int = 50) -> dict:
+def get_pod_logs(namespace: str, pod_pattern: str, tail_lines: int) -> dict:
     """Get logs from pods matching a pattern for MTV troubleshooting.
 
     Useful for debugging migration failures by reading forklift-controller,

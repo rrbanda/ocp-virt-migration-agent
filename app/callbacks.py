@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 _DRY_RUN = os.environ.get("MIGRATION_DRY_RUN", "false").lower() == "true"
 
 
-def migration_safety_callback(
+async def migration_safety_callback(
     tool: BaseTool,
     args: dict,
     tool_context: ToolContext,

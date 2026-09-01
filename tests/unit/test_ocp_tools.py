@@ -67,7 +67,7 @@ class TestCreateMigrationPlan:
     def test_empty_namespace_returns_error(self):
         from app.tools.ocp_tools import create_migration_plan
 
-        result = create_migration_plan(namespace="", vm_name="test-vm")
+        result = create_migration_plan(namespace="", vm_name="test-vm", plan_name="", target_namespace="")
         assert "error" in result
         assert "namespace is required" in result["error"]
 
@@ -75,7 +75,7 @@ class TestCreateMigrationPlan:
     def test_empty_vm_name_returns_error(self):
         from app.tools.ocp_tools import create_migration_plan
 
-        result = create_migration_plan(namespace="ns", vm_name="")
+        result = create_migration_plan(namespace="ns", vm_name="", plan_name="", target_namespace="")
         assert "error" in result
         assert "vm_name is required" in result["error"]
 
@@ -83,7 +83,7 @@ class TestCreateMigrationPlan:
     def test_returns_error_when_k8s_unavailable(self):
         from app.tools.ocp_tools import create_migration_plan
 
-        result = create_migration_plan(namespace="ns", vm_name="vm1")
+        result = create_migration_plan(namespace="ns", vm_name="vm1", plan_name="", target_namespace="")
         assert "error" in result
 
     @patch("app.tools.ocp_tools.K8S_AVAILABLE", True)
@@ -112,7 +112,7 @@ class TestCreateMigrationPlan:
 
         from app.tools.ocp_tools import create_migration_plan
 
-        result = create_migration_plan(namespace="ns", vm_name="my-vm")
+        result = create_migration_plan(namespace="ns", vm_name="my-vm", plan_name="", target_namespace="")
 
         assert result["status"] == "Migration triggered"
         assert result["vm_name"] == "my-vm"
@@ -136,7 +136,7 @@ class TestCreateMigrationPlan:
 
         from app.tools.ocp_tools import create_migration_plan
 
-        result = create_migration_plan(namespace="ns", vm_name="missing-vm")
+        result = create_migration_plan(namespace="ns", vm_name="missing-vm", plan_name="", target_namespace="")
         assert "error" in result
         assert "not found" in result["error"]
 
@@ -146,7 +146,7 @@ class TestGetPodLogs:
     def test_returns_error_when_k8s_unavailable(self):
         from app.tools.ocp_tools import get_pod_logs
 
-        result = get_pod_logs("ns", "forklift")
+        result = get_pod_logs("ns", "forklift", 50)
         assert "error" in result
 
     @patch("app.tools.ocp_tools.K8S_AVAILABLE", True)
@@ -160,6 +160,6 @@ class TestGetPodLogs:
 
         from app.tools.ocp_tools import get_pod_logs
 
-        result = get_pod_logs("ns", "nonexistent-pattern")
+        result = get_pod_logs("ns", "nonexistent-pattern", 50)
         assert "error" in result
         assert "No pods matching" in result["error"]

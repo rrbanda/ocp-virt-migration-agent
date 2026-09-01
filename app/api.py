@@ -83,12 +83,13 @@ class HealthResponse(BaseModel):
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     global _runner, _run_config
 
+    from google.adk.artifacts import InMemoryArtifactService
     from google.adk.runners import InMemoryRunner
 
     from .agent import app as adk_app
     from .agent import default_run_config
 
-    _runner = InMemoryRunner(app=adk_app)
+    _runner = InMemoryRunner(app=adk_app, artifact_service=InMemoryArtifactService())
     _run_config = default_run_config
     log.info("OpenAI-compatible API ready (app: %s)", adk_app.name)
     yield

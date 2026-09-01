@@ -16,7 +16,7 @@ from ..shared.cluster_clients import (
 log = logging.getLogger(__name__)
 
 
-def check_cluster_readiness(namespace: str = "") -> dict:
+def check_cluster_readiness(namespace: str) -> dict:
     """Check if the OpenShift cluster is ready for VM migrations.
 
     Performs automated pre-flight checks on the live cluster including

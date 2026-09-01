@@ -120,7 +120,7 @@ def list_job_templates() -> dict:
         return {"error": f"Unexpected error: {e!s}"}
 
 
-def launch_job(template_id: int, extra_vars: str = "{}") -> dict:
+def launch_job(template_id: int, extra_vars: str) -> dict:
     """Launch an AAP job template and return the job ID.
 
     Triggers an Ansible job template on AAP Controller. The job runs
