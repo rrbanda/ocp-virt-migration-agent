@@ -5,5 +5,8 @@ useDefault = true
 description = "Safe files: SealedSecrets (encrypted) and env example (placeholders)"
 paths = [
     '''deploy/sealed-secrets/.*\.yaml''',
+    '''deploy/sandbox/agent-secrets\.yaml''',
+    '''deploy/sandbox/openshell-client-tls\.yaml''',
+    '''deploy/sandbox/agent-sandbox-auth\.yaml''',
     '''\.env\.example''',
 ]
