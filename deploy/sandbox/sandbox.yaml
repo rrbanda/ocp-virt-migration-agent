@@ -62,13 +62,15 @@ spec:
           value: /opt/app-root/bin:/usr/local/bin:/usr/bin:/bin
         - name: PYTHONPATH
           value: /sandbox
-        # -- LLM --
+        # -- LLM (MaaS premium endpoint) --
         - name: ADK_MODEL
-          value: openai/gemini-2.5-pro
+          value: openai/gemini-2.5-flash
         - name: ADK_MODEL_FAST
           value: openai/gemini-2.5-flash
         - name: ADK_MODEL_REASONING
           value: openai/gemini-2.5-pro
+        - name: LITELLM_SSL_VERIFY
+          value: "false"
         - name: AGENT_CONFIG_PATH
           value: "/mnt/config/agents.yaml"
         - name: OPENAI_API_BASE
@@ -183,11 +185,10 @@ spec:
         - sh
         - -c
         - |
-          if [ ! -f /workspace-pvc/.workspace-initialized ]; then
-            echo "Initializing workspace from image..."
-            [ -d /sandbox ] && tar -C /sandbox -cf - . | tar -C /workspace-pvc -xpf -
-            touch /workspace-pvc/.workspace-initialized
-          fi
+          echo "Copying fresh app code from image to workspace PVC..."
+          [ -d /sandbox/app ] && cp -a /sandbox/app /workspace-pvc/app
+          [ -f /sandbox/pyproject.toml ] && cp -a /sandbox/pyproject.toml /workspace-pvc/
+          echo "App code updated from image"
         securityContext:
           runAsUser: 0
         volumeMounts:

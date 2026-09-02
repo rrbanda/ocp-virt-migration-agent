@@ -15,13 +15,7 @@ data:
 
     echo "=== OCP Virt Migration Agent startup ==="
 
-    # Copy app code from image to workspace PVC (first run only)
-    if [ ! -f /sandbox/app/__init__.py ]; then
-      echo "Copying app code to workspace..."
-      cp -a /opt/app-root/src/app /sandbox/app 2>/dev/null || cp -a /sandbox/app /sandbox/app 2>/dev/null || true
-    fi
-
-    # Copy skills from image to workspace
+    # Copy skills from image to workspace (if present in image)
     if [ -d /skills ] && [ "$(ls -A /skills 2>/dev/null)" ]; then
       echo "Copying skills to workspace..."
       mkdir -p /sandbox/skills
@@ -29,32 +23,16 @@ data:
       echo "Skills: $(ls /sandbox/skills/ | wc -l) loaded"
     fi
 
-    # Runtime overrides (sandbox controller ignores oc apply env changes)
-    # Model: local MaaS premium endpoint with gemini-2.5-pro
-    export OPENAI_API_BASE="https://maas.apps.ocp.qn6c5.sandbox1388.opentlc.com/v1"
-    # MaaS Route uses cluster CA -- inject into Python's cert store
-    export REQUESTS_CA_BUNDLE="/etc/pki/tls/certs/ca-bundle.crt"
-    export SSL_CERT_FILE="/etc/pki/tls/certs/ca-bundle.crt"
-    export CURL_CA_BUNDLE="/etc/pki/tls/certs/ca-bundle.crt"
-    export LITELLM_SSL_VERIFY="false"
-    # Use flash as default (fast); pro for reasoning only
-    export ADK_MODEL="openai/gemini-2.5-flash"
-    export ADK_MODEL_REASONING="openai/gemini-2.5-pro"
-    export ADK_MODEL_FAST="openai/gemini-2.5-flash"
-    export MIGRATION_DRY_RUN="false"
-    # ADK_STREAMING left at default (SSE) -- Accept-Encoding: identity fixes MaaS compatibility
-
     echo "SKILLS_DIR=${SKILLS_DIR:-/sandbox/skills}"
-    echo "ADK_MODEL=${ADK_MODEL}"
-    echo "ADK_MODEL_REASONING=${ADK_MODEL_REASONING}"
-    echo "ADK_MODEL_FAST=${ADK_MODEL_FAST}"
-    echo "OPENAI_API_BASE=${OPENAI_API_BASE}"
+    echo "ADK_MODEL=${ADK_MODEL:-not set}"
+    echo "ADK_MODEL_FAST=${ADK_MODEL_FAST:-not set}"
+    echo "ADK_MODEL_REASONING=${ADK_MODEL_REASONING:-not set}"
+    echo "OPENAI_API_BASE=${OPENAI_API_BASE:-not set}"
     echo "AGENT_MODE=${AGENT_MODE:-pipeline}"
-    echo "MIGRATION_DRY_RUN=${MIGRATION_DRY_RUN}"
+    echo "MIGRATION_DRY_RUN=${MIGRATION_DRY_RUN:-true}"
     echo "MTV_API_URL=${MTV_API_URL:-in-cluster}"
 
     echo "=== Starting agent API on port ${PORT:-8080} ==="
-    echo "Endpoints: /chat/completions (OpenAI-compatible) + /health"
     exec uvicorn app.api:fastapi_app \
       --host 0.0.0.0 \
       --port "${PORT:-8080}" \
