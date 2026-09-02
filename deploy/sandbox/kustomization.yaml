@@ -10,6 +10,7 @@ resources:
   - agent-config.yaml
   - service.yaml
   - route.yaml
+  - route-openai.yaml
   - restart-hook.yaml
   - restart-rbac.yaml
   - mlflow-rbac.yaml

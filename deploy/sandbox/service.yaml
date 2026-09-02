@@ -12,4 +12,7 @@ spec:
   - name: http
     port: 8080
     targetPort: 8080
+  - name: openai
+    port: 8081
+    targetPort: 8081
   type: ClusterIP

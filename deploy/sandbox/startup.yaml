@@ -54,6 +54,13 @@ data:
     echo "MIGRATION_DRY_RUN=${MIGRATION_DRY_RUN}"
     echo "MTV_API_URL=${MTV_API_URL:-in-cluster}"
 
+    # Start OpenAI-compatible FastAPI on port 8081 (background)
+    echo "=== Starting OpenAI-compatible API on port 8081 ==="
+    uvicorn app.api:fastapi_app --host 0.0.0.0 --port 8081 --no-access-log &
+    FASTAPI_PID=$!
+    echo "FastAPI PID: ${FASTAPI_PID}"
+
+    # Start ADK Web (API + UI) on port 8080 (foreground)
     echo "=== Starting ADK Web (API + UI) on port ${PORT:-8080} ==="
     exec adk web \
       --host 0.0.0.0 \
