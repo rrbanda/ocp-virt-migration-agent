@@ -302,6 +302,7 @@ async def _stream(user_text: str, model_id: str, session_id: str | None = None) 
 
             msg = types.Content(role="user", parts=[types.Part.from_text(text=user_text)])
 
+            tool_idx = 0
             async for event in _runner.run_async(
                 user_id=USER_ID,
                 session_id=sid,
@@ -311,23 +312,52 @@ async def _stream(user_text: str, model_id: str, session_id: str | None = None) 
                 if not event.content or not event.content.parts:
                     continue
                 for part in event.content.parts:
-                    text = part.text if part.text else None
-                    if not text:
-                        continue
-                    chunk = {
-                        "id": cid,
-                        "object": "chat.completion.chunk",
-                        "created": created,
-                        "model": model_id,
-                        "choices": [
-                            {
-                                "index": 0,
-                                "delta": {"role": "assistant", "content": text},
-                                "finish_reason": None,
-                            }
-                        ],
-                    }
-                    yield f"data: {json.dumps(chunk)}\n\n"
+                    if part.function_call:
+                        fc_name = part.function_call.name
+                        fc_args = dict(part.function_call.args) if part.function_call.args else {}
+                        fc_id = part.function_call.id or f"call_{tool_idx}"
+                        chunk = {
+                            "id": cid,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": model_id,
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {
+                                        "tool_calls": [
+                                            {
+                                                "index": tool_idx,
+                                                "id": fc_id,
+                                                "type": "function",
+                                                "function": {
+                                                    "name": fc_name,
+                                                    "arguments": json.dumps(fc_args),
+                                                },
+                                            }
+                                        ]
+                                    },
+                                    "finish_reason": None,
+                                }
+                            ],
+                        }
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                        tool_idx += 1
+                    elif part.text:
+                        chunk = {
+                            "id": cid,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": model_id,
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {"role": "assistant", "content": part.text},
+                                    "finish_reason": None,
+                                }
+                            ],
+                        }
+                        yield f"data: {json.dumps(chunk)}\n\n"
 
             done_chunk = {
                 "id": cid,
