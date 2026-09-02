@@ -78,13 +78,16 @@ from .tracing import enable_tracing, wrap_tool_with_trace
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# LiteLLM SSL configuration (MaaS endpoints may use cluster-internal CAs)
+# LiteLLM / OpenAI SDK SSL configuration (MaaS endpoints may use cluster CAs)
 # ---------------------------------------------------------------------------
 if os.environ.get("LITELLM_SSL_VERIFY", "true").lower() == "false":
     try:
+        import httpx
         import litellm
 
         litellm.ssl_verify = False
+        litellm.client_session = httpx.Client(verify=False)
+        litellm.aclient_session = httpx.AsyncClient(verify=False)
         log.info("LiteLLM SSL verification disabled (LITELLM_SSL_VERIFY=false)")
     except ImportError:
         pass
