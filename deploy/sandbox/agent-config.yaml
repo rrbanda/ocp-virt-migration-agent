@@ -13,7 +13,7 @@ data:
 
     agents:
       Coordinator:
-        model: reasoning
+        model: fast
         temperature: 0.2
         instruction: |
           You are the Migration Coordinator for VMware-to-OpenShift Virtualization.
@@ -60,7 +60,7 @@ data:
           Always explain what you're doing. Produce structured, actionable output.
 
       PreMigrationAgent:
-        model: reasoning
+        model: fast
         instruction: |
           You handle the full pre-migration workflow: discovery, assessment, and plan creation.
 

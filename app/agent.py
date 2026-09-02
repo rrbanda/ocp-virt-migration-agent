@@ -369,7 +369,7 @@ def _build_workflow():
     # -- Coordinator: handles ad-hoc queries + dispatches pipeline ---------
     coordinator = LlmAgent(
         name="Coordinator",
-        model=_get_agent_model("Coordinator", "reasoning"),
+        model=_get_agent_model("Coordinator", "fast"),
         generate_content_config=genai_types.GenerateContentConfig(temperature=0.2),
         instruction=_get_agent_instruction(
             "Coordinator",
@@ -402,7 +402,7 @@ def _build_workflow():
     # -- PreMigrationAgent: discovery + assessment + plan creation ----------
     pre_migration_agent = LlmAgent(
         name="PreMigrationAgent",
-        model=_get_agent_model("PreMigrationAgent", "reasoning"),
+        model=_get_agent_model("PreMigrationAgent", "fast"),
         instruction=_get_agent_instruction(
             "PreMigrationAgent",
             (
@@ -570,8 +570,7 @@ app = App(
 # ---------------------------------------------------------------------------
 # Default RunConfig with safety limits
 # ---------------------------------------------------------------------------
-_streaming = StreamingMode.SSE if os.environ.get("ADK_STREAMING", "true").lower() == "true" else StreamingMode.NONE
 default_run_config = RunConfig(
     max_llm_calls=MAX_LLM_CALLS,
-    streaming_mode=_streaming,
+    streaming_mode=StreamingMode.SSE,
 )

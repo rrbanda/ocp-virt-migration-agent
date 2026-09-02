@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 log = logging.getLogger(__name__)
 
 USER_ID = getenv("API_USER_ID", "api_user")
-_REQUEST_TIMEOUT = int(getenv("API_REQUEST_TIMEOUT", "300"))
+_REQUEST_TIMEOUT = int(getenv("API_REQUEST_TIMEOUT", "600"))
 _runner = None
 _run_config = None
 

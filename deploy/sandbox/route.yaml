@@ -6,7 +6,7 @@ metadata:
     app: ocp-virt-migration-agent
     app.kubernetes.io/part-of: ocp-virt-migration-agent
   annotations:
-    haproxy.router.openshift.io/timeout: 300s
+    haproxy.router.openshift.io/timeout: 600s
     haproxy.router.openshift.io/hsts_header: max-age=31536000;includeSubDomains
 spec:
   to:
