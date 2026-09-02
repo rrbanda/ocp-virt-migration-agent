@@ -78,17 +78,15 @@ from .tracing import enable_tracing, wrap_tool_with_trace
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# LiteLLM / OpenAI SDK SSL configuration (MaaS endpoints may use cluster CAs)
+# LiteLLM / OpenAI SDK configuration for MaaS gateways
 # ---------------------------------------------------------------------------
 if os.environ.get("LITELLM_SSL_VERIFY", "true").lower() == "false":
     try:
-        import httpx
         import litellm
 
         litellm.ssl_verify = False
-        litellm.client_session = httpx.Client(verify=False)
-        litellm.aclient_session = httpx.AsyncClient(verify=False)
-        log.info("LiteLLM SSL verification disabled (LITELLM_SSL_VERIFY=false)")
+        litellm.drop_params = True
+        log.info("LiteLLM SSL verification disabled")
     except ImportError:
         pass
 
@@ -145,8 +143,16 @@ def _load_agent_config() -> dict:
     return _agent_config
 
 
+_OPENAI_API_BASE = os.environ.get("OPENAI_API_BASE", "")
+_OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
+
+
 def _resolve_model(tier: str):
-    """Resolve a model tier (fast/reasoning/default) to an actual model object."""
+    """Resolve a model tier (fast/reasoning/default) to an actual model object.
+
+    When OPENAI_API_BASE is set, passes api_base and api_key directly to
+    LiteLlm() per ADK docs (avoids httpx env var handling issues).
+    """
     config = _load_agent_config()
     defaults = config.get("defaults", {})
 
@@ -159,7 +165,13 @@ def _resolve_model(tier: str):
 
     if model_str.startswith("gemini") and "/" not in model_str:
         return model_str
-    return LiteLlm(model=model_str)
+
+    kwargs = {}
+    if _OPENAI_API_BASE and model_str.startswith("openai/"):
+        kwargs["api_base"] = _OPENAI_API_BASE
+        kwargs["api_key"] = _OPENAI_API_KEY
+        kwargs["extra_headers"] = {"Accept-Encoding": "identity"}
+    return LiteLlm(model=model_str, **kwargs)
 
 
 def _get_agent_instruction(agent_name: str, fallback: str) -> str:
@@ -558,7 +570,8 @@ app = App(
 # ---------------------------------------------------------------------------
 # Default RunConfig with safety limits
 # ---------------------------------------------------------------------------
+_streaming = StreamingMode.SSE if os.environ.get("ADK_STREAMING", "true").lower() == "true" else StreamingMode.NONE
 default_run_config = RunConfig(
     max_llm_calls=MAX_LLM_CALLS,
-    streaming_mode=StreamingMode.SSE,
+    streaming_mode=_streaming,
 )

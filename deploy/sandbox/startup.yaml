@@ -42,6 +42,8 @@ data:
     export ADK_MODEL_REASONING="openai/gemini-2.5-pro"
     export ADK_MODEL_FAST="openai/gemini-2.5-flash"
     export MIGRATION_DRY_RUN="false"
+    # Disable SSE streaming -- MaaS gateway chunked encoding incompatible with httpx
+    export ADK_STREAMING="false"
 
     echo "SKILLS_DIR=${SKILLS_DIR:-/sandbox/skills}"
     echo "ADK_MODEL=${ADK_MODEL}"
