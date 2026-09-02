@@ -184,6 +184,7 @@ async def _non_stream(
             msg = types.Content(role="user", parts=[types.Part.from_text(text=user_text)])
 
         all_text_parts: list[str] = []
+        seen_texts: set[str] = set()
         context: list[dict] = []
         pending_action: dict | None = None
 
@@ -244,7 +245,10 @@ async def _non_stream(
                             }
                         )
                         if role == "model":
-                            all_text_parts.append(part.text)
+                            sig = part.text.strip()[:200]
+                            if sig not in seen_texts:
+                                seen_texts.add(sig)
+                                all_text_parts.append(part.text)
 
         await asyncio.wait_for(_run(), timeout=_REQUEST_TIMEOUT)
 
@@ -302,6 +306,7 @@ async def _stream(user_text: str, model_id: str, session_id: str | None = None) 
 
             msg = types.Content(role="user", parts=[types.Part.from_text(text=user_text)])
 
+            seen_texts: set[str] = set()
             async for event in _runner.run_async(
                 user_id=USER_ID,
                 session_id=sid,
@@ -329,6 +334,10 @@ async def _stream(user_text: str, model_id: str, session_id: str | None = None) 
                         }
                         yield f"data: {json.dumps(chunk)}\n\n"
                     elif part.text:
+                        sig = part.text.strip()[:200]
+                        if sig in seen_texts:
+                            continue
+                        seen_texts.add(sig)
                         chunk = {
                             "id": cid,
                             "object": "chat.completion.chunk",
