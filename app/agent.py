@@ -78,6 +78,18 @@ from .tracing import enable_tracing, wrap_tool_with_trace
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# LiteLLM SSL configuration (MaaS endpoints may use cluster-internal CAs)
+# ---------------------------------------------------------------------------
+if os.environ.get("LITELLM_SSL_VERIFY", "true").lower() == "false":
+    try:
+        import litellm
+
+        litellm.ssl_verify = False
+        log.info("LiteLLM SSL verification disabled (LITELLM_SSL_VERIFY=false)")
+    except ImportError:
+        pass
+
+# ---------------------------------------------------------------------------
 # MLflow tracing (no-op when MLFLOW_TRACKING_URI is unset)
 # ---------------------------------------------------------------------------
 enable_tracing()
@@ -144,8 +156,7 @@ def _resolve_model(tier: str):
 
     if model_str.startswith("gemini") and "/" not in model_str:
         return model_str
-    ssl_verify = os.environ.get("LITELLM_SSL_VERIFY", "true").lower() != "false"
-    return LiteLlm(model=model_str, ssl_verify=ssl_verify)
+    return LiteLlm(model=model_str)
 
 
 def _get_agent_instruction(agent_name: str, fallback: str) -> str:
