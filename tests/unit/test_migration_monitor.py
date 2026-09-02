@@ -43,11 +43,11 @@ class TestIntentRouter:
 
 
 class TestDonePassthrough:
-    def test_returns_input(self):
+    def test_returns_empty_to_avoid_duplication(self):
         from app.agent import done_passthrough
 
         result = done_passthrough("some ad-hoc answer")
-        assert result.output == "some ad-hoc answer"
+        assert result.output == ""
 
     def test_none_input(self):
         from app.agent import done_passthrough

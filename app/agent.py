@@ -274,8 +274,8 @@ def intent_router(node_input=None):
 
 
 def done_passthrough(node_input=None):
-    """Terminal node -- Coordinator already answered the ad-hoc query."""
-    return Event(output=node_input or "")
+    """Terminal node -- Coordinator already answered. Return empty to avoid duplicating output."""
+    return Event(output="")
 
 
 def readiness_router(node_input=None):
