@@ -52,8 +52,8 @@ data:
     echo "MIGRATION_DRY_RUN=${MIGRATION_DRY_RUN}"
     echo "MTV_API_URL=${MTV_API_URL:-in-cluster}"
 
-    echo "=== Starting ADK api_server on port ${PORT:-8080} ==="
-    exec adk api_server \
+    echo "=== Starting ADK Web (API + UI) on port ${PORT:-8080} ==="
+    exec adk web \
       --host 0.0.0.0 \
       --port "${PORT:-8080}" \
       --allow_origins '*' \
