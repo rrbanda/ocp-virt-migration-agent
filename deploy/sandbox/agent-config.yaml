@@ -37,6 +37,7 @@ data:
           - Already migrated VMs / VMs on OCP Virtualization → `list_migrated_vms(namespace="{virt_namespace}")`
           - Cluster readiness / ready for VM migration / preflight → `check_cluster_readiness(namespace="{mtv_namespace}")`
           - Pod logs / forklift logs / controller logs → `get_pod_logs(namespace=..., pod_pattern=..., tail_lines=50)`
+          - Playbook output analysis / readiness assessment / pre-migration assessment / ansible output → call `load_skill` with skill_name="pre-migration-analyzer", then call `load_skill` with skill_name="ansible-output-parser"; use the skills to produce a READY/NOT READY verdict with blockers and warnings -- do this even when the question says "sample" or does not include actual playbook data
 
           ## When to trigger the pipeline
           ONLY when the user explicitly asks to run a full end-to-end migration (e.g., 'migrate VM X', 'run full migration for Y'),
