@@ -5,6 +5,8 @@ metadata:
   name: {{ include "agent.fullname" . }}
   labels:
     {{- include "agent.labels" . | nindent 4 }}
+  annotations:
+    haproxy.router.openshift.io/timeout: {{ .Values.openshift.route.timeout | default "180s" }}
 spec:
   tls:
     termination: {{ .Values.openshift.route.tls.termination }}
