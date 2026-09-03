@@ -59,7 +59,7 @@ resources:
 openshift:
   route:
     enabled: true
-    timeout: "180s"
+    timeout: "600s"
     tls:
       termination: edge
       insecureEdgeTerminationPolicy: Redirect
