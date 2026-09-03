@@ -187,27 +187,36 @@ def run_evaluation():
     try:
         import mlflow
 
-        mlflow.log_param("benchmark_path", BENCHMARK_PATH)
-        mlflow.log_param("agent_url", AGENT_URL)
-        mlflow.log_param("num_questions", n)
-        mlflow.log_param("judge_model", JUDGE_MODEL)
+        experiment_name = os.environ.get("MLFLOW_EXPERIMENT", "ocp-virt-migration-agent-eval")
+        experiment = mlflow.get_experiment_by_name(experiment_name)
+        if experiment is None:
+            experiment_id = mlflow.create_experiment(experiment_name)
+        else:
+            experiment_id = experiment.experiment_id
+        mlflow.set_experiment(experiment_id=experiment_id)
 
-        mlflow.log_metric("response_accuracy", avg_accuracy)
-        mlflow.log_metric("tool_accuracy", avg_tool_accuracy)
-        mlflow.log_metric("avg_latency_s", avg_latency)
+        with mlflow.start_run():
+            mlflow.log_param("benchmark_path", BENCHMARK_PATH)
+            mlflow.log_param("agent_url", AGENT_URL)
+            mlflow.log_param("num_questions", n)
+            mlflow.log_param("judge_model", JUDGE_MODEL)
 
-        for cat in ["knowledge", "tool_use", "skill_loading", "safety"]:
-            cat_results = [r for r in results if r["category"] == cat]
-            if cat_results:
-                cat_acc = round(sum(r["response_accuracy"] for r in cat_results) / len(cat_results), 3)
-                mlflow.log_metric(f"{cat}_accuracy", cat_acc)
+            mlflow.log_metric("response_accuracy", avg_accuracy)
+            mlflow.log_metric("tool_accuracy", avg_tool_accuracy)
+            mlflow.log_metric("avg_latency_s", avg_latency)
 
-        for r in results:
-            mlflow.log_metric(f"q_{r['id']}_accuracy", r["response_accuracy"])
-            mlflow.log_metric(f"q_{r['id']}_latency", r["latency_s"])
+            for cat in ["knowledge", "tool_use", "skill_loading", "safety"]:
+                cat_results = [r for r in results if r["category"] == cat]
+                if cat_results:
+                    cat_acc = round(sum(r["response_accuracy"] for r in cat_results) / len(cat_results), 3)
+                    mlflow.log_metric(f"{cat}_accuracy", cat_acc)
 
-        mlflow.log_dict(results, "eval_results.json")
-        log.info("Results logged to MLflow")
+            for r in results:
+                mlflow.log_metric(f"q_{r['id']}_accuracy", r["response_accuracy"])
+                mlflow.log_metric(f"q_{r['id']}_latency", r["latency_s"])
+
+            mlflow.log_dict(results, "eval_results.json")
+            log.info("Results logged to MLflow experiment '%s'", experiment_name)
     except ImportError:
         log.warning("mlflow not installed -- results not logged")
     except Exception as e:
