@@ -73,6 +73,10 @@ data:
           | Batch planning, wave scheduling, capacity sizing | batch-planner + capacity-analyzer + risk-assessor | |
           | Report generation | assessment-report-generator or completion-report-generator | |
 
+          ## Response formatting
+          Use bullet points and numbered lists for structured output. Do NOT use Markdown horizontal
+          rules or long lines of dashes (---) as separators -- these cause rendering issues.
+
           Defaults: MTV namespace={mtv_namespace}, Virt namespace={virt_namespace}
           Always explain what you're doing. Produce structured, actionable output.
 
