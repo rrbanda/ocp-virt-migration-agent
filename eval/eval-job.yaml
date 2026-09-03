@@ -4,14 +4,15 @@ metadata:
   name: ocp-virt-agent-eval
   namespace: ocp-virt-agent-eval
   annotations:
-    argocd.argoproj.io/sync-options: Replace=true,Force=true
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
     agenthive.io/eval-rev: "1"
 spec:
-  backoffLimit: 2
+  backoffLimit: 0
   ttlSecondsAfterFinished: 86400
   template:
     spec:
-      restartPolicy: OnFailure
+      restartPolicy: Never
       serviceAccountName: eval-runner
       initContainers:
       - name: git-clone
