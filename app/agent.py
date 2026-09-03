@@ -39,8 +39,7 @@ import pathlib
 from google.adk.agents import LlmAgent
 from google.adk.agents.context import Context
 from google.adk.agents.run_config import RunConfig, StreamingMode
-from google.adk.apps import App, ResumabilityConfig
-from google.adk.apps.app import EventsCompactionConfig
+from google.adk.apps import App
 from google.adk.events.event import Event
 from google.adk.events.request_input import RequestInput
 from google.adk.models.lite_llm import LiteLlm
@@ -561,11 +560,6 @@ app = App(
     name=APP_NAME,
     root_agent=root_agent,
     plugins=[MigrationLoggingPlugin()],
-    resumability_config=ResumabilityConfig(is_resumable=True),
-    events_compaction_config=EventsCompactionConfig(
-        token_threshold=COMPACTION_TOKEN_THRESHOLD,
-        event_retention_size=COMPACTION_EVENT_RETENTION,
-    ),
 )
 # ---------------------------------------------------------------------------
 # Default RunConfig with safety limits

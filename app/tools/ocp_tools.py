@@ -475,22 +475,25 @@ def create_migration_plan(
             "namespace": namespace,
         }
 
-        # Step 1: Create NetworkMap using source network NAME (per MTV docs)
+        # Step 1: Create NetworkMap - inventory returns {id, kind}, prefer id over name
         nmap_name = f"{plan_name}-netmap"
         dest_type = DEFAULT_NETWORK_DESTINATION
         nmap_map = []
         network_summary = []
         for net in target_vm.get("networks", []):
+            net_id = net.get("id", "")
             net_name = net.get("name", "")
-            if not net_name:
+            source_key = net_id or net_name
+            if not source_key:
                 continue
+            source = {"id": net_id} if net_id else {"name": net_name}
             dest = (
                 {"type": dest_type}
                 if dest_type == "pod"
                 else {"type": "multus", "name": dest_type, "namespace": target_namespace}
             )
-            nmap_map.append({"source": {"name": net_name}, "destination": dest})
-            network_summary.append(f"{net_name} -> {dest_type}")
+            nmap_map.append({"source": source, "destination": dest})
+            network_summary.append(f"{source_key} -> {dest_type}")
 
         nmap = {
             "apiVersion": _FORKLIFT_API,

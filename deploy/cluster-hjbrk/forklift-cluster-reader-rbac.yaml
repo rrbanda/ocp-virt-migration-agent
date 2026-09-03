@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-reader
+  labels:
+    app.kubernetes.io/part-of: ocp-virt-migration-agent
+    app.kubernetes.io/managed-by: ocp-virt-migration-agent
+subjects:
+  - kind: ServiceAccount
+    name: forklift-controller
+    namespace: openshift-mtv
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-reader

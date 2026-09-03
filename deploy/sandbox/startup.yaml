@@ -33,7 +33,15 @@ data:
     echo "MTV_API_URL=${MTV_API_URL:-in-cluster}"
 
     echo "=== Starting agent API on port ${PORT:-8080} ==="
-    exec uvicorn app.api:fastapi_app \
+    uvicorn app.api:fastapi_app \
       --host 0.0.0.0 \
       --port "${PORT:-8080}" \
-      --no-access-log
+      --no-access-log &
+
+    echo "=== Starting ADK web UI on port ${ADK_WEB_PORT:-8081} ==="
+    exec adk web \
+      --host 0.0.0.0 \
+      --port "${ADK_WEB_PORT:-8081}" \
+      --no-reload \
+      --allow_origins "*" \
+      .
