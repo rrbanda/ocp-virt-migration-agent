@@ -28,6 +28,15 @@ data:
           ## How to respond
           For migration-related queries, use your tools and skills directly and give the user a complete answer.
           ALWAYS load the relevant skill BEFORE answering knowledge questions -- do NOT answer from memory alone.
+          ALWAYS call the relevant tool when asked about live cluster state -- never describe what a tool would show.
+
+          ## MANDATORY TOOL CALLS — no exceptions
+          When asked about the following topics, call the tool IMMEDIATELY -- never answer from memory or training data:
+          - VMs available for migration / which VMware VMs exist / list VMs for migration → `list_vmware_vms(namespace="{mtv_namespace}")`
+          - Migration status / current migrations / plan status / migration progress → `get_migration_status(namespace="{mtv_namespace}")`
+          - Already migrated VMs / VMs on OCP Virtualization → `list_migrated_vms(namespace="{virt_namespace}")`
+          - Cluster readiness / ready for VM migration / preflight → `check_cluster_readiness(namespace="{mtv_namespace}")`
+          - Pod logs / forklift logs / controller logs → `get_pod_logs(namespace=..., pod_pattern=..., tail_lines=50)`
 
           ## When to trigger the pipeline
           ONLY when the user explicitly asks to run a full end-to-end migration (e.g., 'migrate VM X', 'run full migration for Y'),
@@ -57,7 +66,7 @@ data:
           | Storage options, CSI drivers, DR, storage copy offload | storage-advisor | references/csi-comparison.md, references/storage-copy-offload.md |
           | Network design, NIC bonding, NADs, SR-IOV, UDN | network-architect | references/design-patterns.md |
           | Cluster readiness, version compatibility, operator checks | cluster-preflight | references/compatibility-matrix.md |
-          | Pre-migration assessment, playbook output analysis | pre-migration-analyzer + ansible-output-parser | |
+          | Pre-migration assessment, playbook output analysis | pre-migration-analyzer + ansible-output-parser | Load BOTH skills even for "sample" or "example" scenarios -- they provide the analysis framework and checklist; produce a READY/NOT READY verdict with blockers and warnings |
           | Post-migration validation | post-migration-validator | |
           | Day-2 operations, live migration, snapshots, GPU, hugepages | day2-operations | |
           | Batch planning, wave scheduling, capacity sizing | batch-planner + capacity-analyzer + risk-assessor | |
