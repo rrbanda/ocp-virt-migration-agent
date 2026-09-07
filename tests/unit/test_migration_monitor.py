@@ -43,17 +43,17 @@ class TestIntentRouter:
 
 
 class TestDonePassthrough:
-    def test_returns_empty_to_avoid_duplication(self):
+    def test_returns_none_to_avoid_duplication(self):
         from app.agent import done_passthrough
 
         result = done_passthrough("some ad-hoc answer")
-        assert result.output == ""
+        assert result is None
 
     def test_none_input(self):
         from app.agent import done_passthrough
 
         result = done_passthrough(None)
-        assert result.output == ""
+        assert result is None
 
 
 class TestReadinessRouter:

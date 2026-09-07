@@ -40,13 +40,14 @@ from google.adk.agents import LlmAgent
 from google.adk.agents.context import Context
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.apps import App
+from google.adk.apps.app import EventsCompactionConfig
 from google.adk.events.event import Event
 from google.adk.events.request_input import RequestInput
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.skills import load_skill_from_dir
 from google.adk.tools import FunctionTool
 from google.adk.tools.skill_toolset import SkillToolset
-from google.adk.workflow import Workflow
+from google.adk.workflow import FunctionNode, Workflow
 from google.genai import types as genai_types
 
 from .callbacks import migration_safety_callback
@@ -255,7 +256,25 @@ log.info("Discovered %d skills from %s", len(skills), SKILLS_DIR)
 
 
 # ---------------------------------------------------------------------------
+# Helper: extract text from any node output type (types.Content, dict, str)
 # ---------------------------------------------------------------------------
+def _extract_text(node_input) -> str:
+    """Extract text from various node output types.
+
+    LlmAgent nodes without output_schema emit types.Content objects.
+    Router functions and other nodes may emit dicts or strings.
+    """
+    if node_input is None:
+        return ""
+    if isinstance(node_input, str):
+        return node_input
+    if isinstance(node_input, dict):
+        return str(node_input)
+    if hasattr(node_input, "parts"):
+        return " ".join(p.text for p in node_input.parts if hasattr(p, "text") and p.text)
+    return str(node_input)
+
+
 # ---------------------------------------------------------------------------
 # Graph router functions (use ctx.state for per-session data, not globals)
 # ---------------------------------------------------------------------------
@@ -264,24 +283,24 @@ _MAX_MONITOR_POLLS = int(os.environ.get("MAX_MONITOR_POLLS", "30"))
 
 def intent_router(node_input=None):
     """Route coordinator output: pipeline (full migration) or done (ad-hoc answer)."""
-    if node_input is None:
+    text = _extract_text(node_input).upper()
+    if not text:
         return Event(route="done", output="")
-    text = str(node_input.get("action", node_input) if isinstance(node_input, dict) else node_input).upper()
     if "PIPELINE" in text or "FULL MIGRATION" in text or "RUN MIGRATION" in text:
         return Event(route="pipeline", output=node_input)
     return Event(route="done", output=node_input)
 
 
 def done_passthrough(node_input=None):
-    """Terminal node -- Coordinator already answered. Return empty to avoid duplicating output."""
-    return Event(output="")
+    """Terminal node -- Coordinator already answered. No output to avoid duplication."""
+    return
 
 
 def readiness_router(node_input=None):
     """Deterministic: skip migration if assessment says NOT READY."""
-    if node_input is None:
+    text = _extract_text(node_input)
+    if not text:
         return Event(route="not_ready", output="No assessment data")
-    text = str(node_input.get("verdict", node_input) if isinstance(node_input, dict) else node_input)
     if "NOT READY" in text.upper():
         log.info("[Router] NOT READY -- skipping to report")
         return Event(route="not_ready", output=node_input)
@@ -290,10 +309,14 @@ def readiness_router(node_input=None):
 
 
 async def migration_approval(ctx: Context, node_input):
-    """HITL: pause for human approval before triggering real migration."""
+    """HITL: pause for human approval before triggering real migration.
+
+    Uses rerun_on_resume=True (via FunctionNode in the edge definition)
+    so ctx.resume_inputs is populated on resume.
+    """
     plan_summary = ""
     if node_input:
-        text = str(node_input)
+        text = _extract_text(node_input)
         for marker in ("Plan '", "plan_name"):
             idx = text.find(marker)
             if idx >= 0:
@@ -310,14 +333,19 @@ async def migration_approval(ctx: Context, node_input):
             ),
         )
         return
-    response = ctx.resume_inputs.get("migration_approval", "no")
-    yield Event(output={"approval": str(response), "plan_context": plan_summary})
+
+    response = str(ctx.resume_inputs.get("migration_approval", "no"))
+    result = response.get("result", response) if isinstance(response, dict) else response
+    yield Event(output={"approval": result, "plan_context": plan_summary})
 
 
 def approval_router(node_input):
-    """Route based on human yes/no response."""
-    text = str(node_input).strip().lower()
-    if text in ("yes", "y", "approve", "approved", "proceed"):
+    """Route based on human yes/no response from migration_approval."""
+    if isinstance(node_input, dict):
+        text = str(node_input.get("approval", "")).strip().lower()
+    else:
+        text = _extract_text(node_input).strip().lower()
+    if any(kw in text for kw in ("yes", "y", "approve", "approved", "proceed")):
         log.info("[Router] Migration APPROVED")
         return Event(route="approved", output=node_input)
     log.info("[Router] Migration REJECTED")
@@ -333,9 +361,7 @@ def outcome_router(ctx: Context, node_input=None):
     execution_status content.
     """
     count = ctx.state.get("temp:monitor_poll_count", 0) + 1
-    if node_input is None:
-        node_input = ""
-    status = str(node_input.get("status", node_input) if isinstance(node_input, dict) else node_input)
+    status = _extract_text(node_input)
     if any(kw in status for kw in ("Failed", "Error", "Canceled", "Cancelled")):
         log.info("[Router] Migration FAILED -> terminal")
         return Event(route="terminal", output=status, state={"temp:monitor_poll_count": 0})
@@ -402,6 +428,7 @@ def _build_workflow():
     pre_migration_agent = LlmAgent(
         name="PreMigrationAgent",
         model=_get_agent_model("PreMigrationAgent", "fast"),
+        generate_content_config=genai_types.GenerateContentConfig(temperature=0.2),
         instruction=_get_agent_instruction(
             "PreMigrationAgent",
             (
@@ -428,6 +455,7 @@ def _build_workflow():
     execution_agent = LlmAgent(
         name="ExecutionAgent",
         model=_get_agent_model("ExecutionAgent", "fast"),
+        generate_content_config=genai_types.GenerateContentConfig(temperature=0.1),
         instruction=_get_agent_instruction(
             "ExecutionAgent",
             (
@@ -469,6 +497,9 @@ def _build_workflow():
         output_key="final_report",
     )
 
+    # -- HITL node with rerun_on_resume=True so ctx.resume_inputs is populated
+    hitl_node = FunctionNode(func=migration_approval, rerun_on_resume=True)
+
     # -- Workflow graph (9 edges, 4 agents) --------------------------------
     workflow = Workflow(
         name=AGENT_NAME,
@@ -477,8 +508,8 @@ def _build_workflow():
             ("START", coordinator, intent_router),
             (intent_router, {"done": done_passthrough, "pipeline": pre_migration_agent}),
             (pre_migration_agent, readiness_router),
-            (readiness_router, {"ready": migration_approval, "not_ready": post_migration_agent}),
-            (migration_approval, approval_router),
+            (readiness_router, {"ready": hitl_node, "not_ready": post_migration_agent}),
+            (hitl_node, approval_router),
             (approval_router, {"approved": execution_agent, "rejected": post_migration_agent}),
             (execution_agent, outcome_router),
             (outcome_router, {"terminal": post_migration_agent, "running": execution_agent}),
@@ -490,7 +521,7 @@ def _build_workflow():
 # ---------------------------------------------------------------------------
 # Single mode: legacy monolithic agent
 # ---------------------------------------------------------------------------
-_SINGLE_INSTRUCTION = (
+_SINGLE_INSTRUCTION_TEMPLATE = (
     "You are an expert in VMware-to-OpenShift Virtualization migrations.\n\n"
     "## Tools\n"
     "- list_vmware_vms / list_migrated_vms / get_vm_details / get_migration_status\n"
@@ -502,8 +533,8 @@ _SINGLE_INSTRUCTION = (
     "- assessment-report-generator, completion-report-generator, mtv-log-analyzer\n"
     "- capacity-analyzer, risk-assessor, batch-planner\n\n"
     "Always explain what you're doing. Produce structured, actionable reports.\n"
-    f"Default MTV namespace: {DEFAULT_MTV_NAMESPACE}. "
-    f"Default Virt namespace: {DEFAULT_VIRT_NAMESPACE}."
+    "Default MTV namespace: {mtv_namespace}. "
+    "Default Virt namespace: {virt_namespace}."
 )
 
 
@@ -534,7 +565,10 @@ def _build_single_agent() -> LlmAgent:
         model=_resolve_model("default"),
         name=os.environ.get("AGENT_NAME", "migration_agent"),
         description=AGENT_DESC,
-        instruction=_SINGLE_INSTRUCTION,
+        instruction=_SINGLE_INSTRUCTION_TEMPLATE.format(
+            mtv_namespace=DEFAULT_MTV_NAMESPACE,
+            virt_namespace=DEFAULT_VIRT_NAMESPACE,
+        ),
         tools=tools,
         before_tool_callback=migration_safety_callback,
     )
@@ -560,6 +594,10 @@ app = App(
     name=APP_NAME,
     root_agent=root_agent,
     plugins=[MigrationLoggingPlugin()],
+    events_compaction_config=EventsCompactionConfig(
+        token_threshold=COMPACTION_TOKEN_THRESHOLD,
+        event_retention_size=COMPACTION_EVENT_RETENTION,
+    ),
 )
 # ---------------------------------------------------------------------------
 # Default RunConfig with safety limits

@@ -1,6 +1,8 @@
 """ADK Plugins for cross-cutting observability and policy enforcement.
 
 Registered via ``App(plugins=[...])`` in ``agent.py``.
+
+Callback signatures match google-adk 2.8.0 BasePlugin exactly.
 """
 
 import logging
@@ -35,8 +37,9 @@ class MigrationLoggingPlugin(BasePlugin):
 
     # -- Agent lifecycle ---------------------------------------------------
 
-    async def before_agent_callback(self, *, callback_context: CallbackContext, **kwargs) -> types.Content | None:
-        agent: BaseAgent = kwargs.get("agent")
+    async def before_agent_callback(
+        self, *, agent: BaseAgent, callback_context: CallbackContext
+    ) -> types.Content | None:
         agent_name = agent.name if agent else "unknown"
         log.info(
             "[plugin] agent_start  name=%s  invocation=%s",
@@ -46,8 +49,9 @@ class MigrationLoggingPlugin(BasePlugin):
         callback_context.state[f"_plugin_agent_start:{agent_name}"] = time.monotonic()
         return None
 
-    async def after_agent_callback(self, *, callback_context: CallbackContext, **kwargs) -> types.Content | None:
-        agent: BaseAgent = kwargs.get("agent")
+    async def after_agent_callback(
+        self, *, agent: BaseAgent, callback_context: CallbackContext
+    ) -> types.Content | None:
         agent_name = agent.name if agent else "unknown"
         started = callback_context.state.get(f"_plugin_agent_start:{agent_name}")
         duration_ms = round((time.monotonic() - started) * 1000) if started else -1
@@ -62,7 +66,7 @@ class MigrationLoggingPlugin(BasePlugin):
     # -- Tool lifecycle ----------------------------------------------------
 
     async def before_tool_callback(
-        self, *, tool: BaseTool, tool_args: dict, tool_context: ToolContext, **kwargs
+        self, *, tool: BaseTool, tool_args: dict, tool_context: ToolContext
     ) -> dict | None:
         _tool_start_time.set(time.monotonic())
         log.info(
@@ -73,7 +77,7 @@ class MigrationLoggingPlugin(BasePlugin):
         return None
 
     async def after_tool_callback(
-        self, *, tool: BaseTool, tool_args: dict, tool_context: ToolContext, result: dict, **kwargs
+        self, *, tool: BaseTool, tool_args: dict, tool_context: ToolContext, result: dict
     ) -> dict | None:
         started = _tool_start_time.get()
         duration_ms = round((time.monotonic() - started) * 1000) if started else -1
@@ -87,7 +91,7 @@ class MigrationLoggingPlugin(BasePlugin):
         return None
 
     async def on_tool_error_callback(
-        self, *, tool: BaseTool, tool_args: dict, tool_context: ToolContext, error: Exception, **kwargs
+        self, *, tool: BaseTool, tool_args: dict, tool_context: ToolContext, error: Exception
     ) -> dict | None:
         log.error(
             "[plugin] tool_error   name=%s  error=%s  args=%s",
@@ -100,7 +104,7 @@ class MigrationLoggingPlugin(BasePlugin):
     # -- Model lifecycle ---------------------------------------------------
 
     async def before_model_callback(
-        self, *, callback_context: CallbackContext, llm_request: LlmRequest, **kwargs
+        self, *, callback_context: CallbackContext, llm_request: LlmRequest
     ) -> LlmResponse | None:
         log.info(
             "[plugin] model_start  agent=%s  invocation=%s",
@@ -110,7 +114,7 @@ class MigrationLoggingPlugin(BasePlugin):
         return None
 
     async def after_model_callback(
-        self, *, callback_context: CallbackContext, llm_response: LlmResponse, **kwargs
+        self, *, callback_context: CallbackContext, llm_response: LlmResponse
     ) -> LlmResponse | None:
         log.info(
             "[plugin] model_end    agent=%s  invocation=%s",
@@ -120,7 +124,7 @@ class MigrationLoggingPlugin(BasePlugin):
         return None
 
     async def on_model_error_callback(
-        self, *, callback_context: CallbackContext, error: Exception, **kwargs
+        self, *, callback_context: CallbackContext, llm_request: LlmRequest, error: Exception
     ) -> LlmResponse | None:
         log.error(
             "[plugin] model_error  agent=%s  error=%s  invocation=%s",

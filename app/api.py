@@ -245,7 +245,7 @@ async def _non_stream(
                             }
                         )
                         if role == "model":
-                            sig = part.text.strip()[:200]
+                            sig = hash(part.text.strip())
                             if sig not in seen_texts:
                                 seen_texts.add(sig)
                                 all_text_parts.append(part.text)
