@@ -334,8 +334,11 @@ async def migration_approval(ctx: Context, node_input):
         )
         return
 
-    response = str(ctx.resume_inputs.get("migration_approval", "no"))
-    result = response.get("result", response) if isinstance(response, dict) else response
+    response = ctx.resume_inputs.get("migration_approval", "no")
+    if isinstance(response, dict):
+        result = str(response.get("result", response))
+    else:
+        result = str(response)
     yield Event(output={"approval": result, "plan_context": plan_summary})
 
 

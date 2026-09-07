@@ -65,9 +65,7 @@ class MigrationLoggingPlugin(BasePlugin):
 
     # -- Tool lifecycle ----------------------------------------------------
 
-    async def before_tool_callback(
-        self, *, tool: BaseTool, tool_args: dict, tool_context: ToolContext
-    ) -> dict | None:
+    async def before_tool_callback(self, *, tool: BaseTool, tool_args: dict, tool_context: ToolContext) -> dict | None:
         _tool_start_time.set(time.monotonic())
         log.info(
             "[plugin] tool_start   name=%s  args=%s",
