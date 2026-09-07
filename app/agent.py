@@ -315,6 +315,7 @@ async def migration_approval(ctx: Context, node_input):
     response text becomes the node output and flows directly to approval_router.
     This is the correct ADK pattern for simple yes/no approval gates.
     """
+    print(f"[TRACE migration_approval] resume_inputs={ctx.resume_inputs}", flush=True)
     yield RequestInput(
         interrupt_id="migration_approval",
         message=(
@@ -331,15 +332,16 @@ def approval_router(node_input):
     With rerun_on_resume=False, node_input is the raw user response.
     The API wraps it as {"result": "user text"} via FunctionResponse.
     """
+    print(f"[TRACE approval_router] type={type(node_input).__name__} repr={repr(node_input)[:300]}", flush=True)
     if isinstance(node_input, dict):
         text = str(node_input.get("result", node_input)).strip().lower()
     else:
         text = _extract_text(node_input).strip().lower()
-    log.warning("[approval_router] input=%s text=%s", type(node_input).__name__, text[:100])
+    print(f"[TRACE approval_router] extracted text={text[:200]}", flush=True)
     if any(kw in text for kw in ("yes", "y", "approve", "approved", "proceed")):
-        log.warning("[Router] Migration APPROVED")
+        print("[TRACE approval_router] -> APPROVED", flush=True)
         return Event(route="approved", output=node_input)
-    log.warning("[Router] Migration REJECTED -- text was: %s", text[:200])
+    print(f"[TRACE approval_router] -> REJECTED (text={text[:200]})", flush=True)
     return Event(route="rejected", output=node_input)
 
 
