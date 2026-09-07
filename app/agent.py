@@ -444,7 +444,8 @@ def _build_workflow():
     )
 
     # -- ExecutionAgent: execute migration + monitor status -----------------
-    execute_tool = FunctionTool(execute_migration, require_confirmation=True)
+    # No require_confirmation here -- the graph-level HITL (migration_approval)
+    # already obtained human approval before reaching this agent.
     execution_agent = LlmAgent(
         name="ExecutionAgent",
         model=_get_agent_model("ExecutionAgent", "fast"),
@@ -456,7 +457,7 @@ def _build_workflow():
                 "Call execute_migration to start, then get_migration_status to check progress."
             ),
         ),
-        tools=[execute_tool, get_migration_status, get_pod_logs, *skill_tools],
+        tools=[execute_migration, get_migration_status, get_pod_logs, *skill_tools],
         before_tool_callback=migration_safety_callback,
         output_key="execution_status",
     )
