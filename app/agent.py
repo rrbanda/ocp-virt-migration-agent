@@ -47,7 +47,7 @@ from google.adk.models.lite_llm import LiteLlm
 from google.adk.skills import load_skill_from_dir
 from google.adk.tools import FunctionTool
 from google.adk.tools.skill_toolset import SkillToolset
-from google.adk.workflow import FunctionNode, Workflow
+from google.adk.workflow import Workflow
 from google.genai import types as genai_types
 
 from .callbacks import migration_safety_callback
@@ -311,47 +311,35 @@ def readiness_router(node_input=None):
 async def migration_approval(ctx: Context, node_input):
     """HITL: pause for human approval before triggering real migration.
 
-    Uses rerun_on_resume=True (via FunctionNode in the edge definition)
-    so ctx.resume_inputs is populated on resume.
+    Uses rerun_on_resume=False (FunctionNode default). On resume, the user's
+    response text becomes the node output and flows directly to approval_router.
+    This is the correct ADK pattern for simple yes/no approval gates.
     """
-    plan_summary = ""
-    if node_input:
-        text = _extract_text(node_input)
-        for marker in ("Plan '", "plan_name"):
-            idx = text.find(marker)
-            if idx >= 0:
-                plan_summary = text[max(0, idx - 50) : idx + 100]
-                break
-
-    if not ctx.resume_inputs:
-        yield RequestInput(
-            interrupt_id="migration_approval",
-            message=(
-                "The VM has been assessed as READY for migration. "
-                "Do you approve proceeding with the VMware-to-OCP Virtualization "
-                "migration? (Type 'yes' to approve or 'no' to cancel)"
-            ),
-        )
-        return
-
-    response = ctx.resume_inputs.get("migration_approval", "no")
-    if isinstance(response, dict):
-        result = str(response.get("result", response))
-    else:
-        result = str(response)
-    yield Event(output={"approval": result, "plan_context": plan_summary})
+    yield RequestInput(
+        interrupt_id="migration_approval",
+        message=(
+            "The VM has been assessed as READY for migration. "
+            "Do you approve proceeding with the VMware-to-OCP Virtualization "
+            "migration? (Type 'yes' to approve or 'no' to cancel)"
+        ),
+    )
 
 
 def approval_router(node_input):
-    """Route based on human yes/no response from migration_approval."""
+    """Route based on human yes/no response from migration_approval.
+
+    With rerun_on_resume=False, node_input is the raw user response.
+    The API wraps it as {"result": "user text"} via FunctionResponse.
+    """
     if isinstance(node_input, dict):
-        text = str(node_input.get("approval", "")).strip().lower()
+        text = str(node_input.get("result", node_input)).strip().lower()
     else:
         text = _extract_text(node_input).strip().lower()
+    log.warning("[approval_router] input=%s text=%s", type(node_input).__name__, text[:100])
     if any(kw in text for kw in ("yes", "y", "approve", "approved", "proceed")):
-        log.info("[Router] Migration APPROVED")
+        log.warning("[Router] Migration APPROVED")
         return Event(route="approved", output=node_input)
-    log.info("[Router] Migration REJECTED")
+    log.warning("[Router] Migration REJECTED -- text was: %s", text[:200])
     return Event(route="rejected", output=node_input)
 
 
@@ -500,9 +488,6 @@ def _build_workflow():
         output_key="final_report",
     )
 
-    # -- HITL node with rerun_on_resume=True so ctx.resume_inputs is populated
-    hitl_node = FunctionNode(func=migration_approval, rerun_on_resume=True)
-
     # -- Workflow graph (9 edges, 4 agents) --------------------------------
     workflow = Workflow(
         name=AGENT_NAME,
@@ -511,8 +496,8 @@ def _build_workflow():
             ("START", coordinator, intent_router),
             (intent_router, {"done": done_passthrough, "pipeline": pre_migration_agent}),
             (pre_migration_agent, readiness_router),
-            (readiness_router, {"ready": hitl_node, "not_ready": post_migration_agent}),
-            (hitl_node, approval_router),
+            (readiness_router, {"ready": migration_approval, "not_ready": post_migration_agent}),
+            (migration_approval, approval_router),
             (approval_router, {"approved": execution_agent, "rejected": post_migration_agent}),
             (execution_agent, outcome_router),
             (outcome_router, {"terminal": post_migration_agent, "running": execution_agent}),
