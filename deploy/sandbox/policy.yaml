@@ -44,7 +44,7 @@ network_policies:
   mtv_cluster_api:
     name: VMware/OCP Virt cluster API (MTV + KubeVirt)
     endpoints:
-      - host: api.cluster-hjbrk.dyn.redhatworkshops.io
+      - host: api.cluster-lprk6.dyn.redhatworkshops.io
         port: 6443
         protocol: rest
         enforcement: enforce
@@ -55,7 +55,7 @@ network_policies:
   mtv_inventory:
     name: Forklift inventory API
     endpoints:
-      - host: forklift-inventory-openshift-mtv.apps.cluster-hjbrk.dyn.redhatworkshops.io
+      - host: forklift-inventory-openshift-mtv.apps.cluster-lprk6.dyn.redhatworkshops.io
         port: 443
         protocol: rest
         enforcement: enforce

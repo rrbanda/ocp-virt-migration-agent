@@ -89,9 +89,9 @@ spec:
               optional: true
         # -- Multi-cluster (VMware/OCP Virt) --
         - name: MTV_API_URL
-          value: "https://api.cluster-hjbrk.dyn.redhatworkshops.io:6443"
+          value: "https://api.cluster-lprk6.dyn.redhatworkshops.io:6443"
         - name: VIRT_API_URL
-          value: "https://api.cluster-hjbrk.dyn.redhatworkshops.io:6443"
+          value: "https://api.cluster-lprk6.dyn.redhatworkshops.io:6443"
         - name: MTV_API_TOKEN
           valueFrom:
             secretKeyRef:
@@ -99,7 +99,7 @@ spec:
               name: ocp-virt-migration-agent-secret
               optional: true
         - name: MTV_INVENTORY_URL
-          value: "https://forklift-inventory-openshift-mtv.apps.cluster-hjbrk.dyn.redhatworkshops.io"
+          value: "https://forklift-inventory-openshift-mtv.apps.cluster-lprk6.dyn.redhatworkshops.io"
         - name: OCP_CA_BUNDLE
           value: "false"
         - name: DEFAULT_MTV_NAMESPACE
