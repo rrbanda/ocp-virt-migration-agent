@@ -8,7 +8,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: rhoai-workloads
   sources:
     - repoURL: https://github.com/rrbanda/ocp-virt-migration-agent.git
       targetRevision: main
