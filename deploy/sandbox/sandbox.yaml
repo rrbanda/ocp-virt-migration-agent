@@ -186,7 +186,7 @@ spec:
         - -c
         - |
           echo "Copying fresh app code from image to workspace PVC..."
-          [ -d /sandbox/app ] && cp -a /sandbox/app /workspace-pvc/app
+          [ -d /sandbox/app ] && rm -rf /workspace-pvc/app && cp -a /sandbox/app /workspace-pvc/app
           [ -f /sandbox/pyproject.toml ] && cp -a /sandbox/pyproject.toml /workspace-pvc/
           echo "App code updated from image"
         securityContext:
