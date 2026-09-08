@@ -105,7 +105,7 @@ SKILLS_DIR = pathlib.Path(os.environ.get("SKILLS_DIR", "/skills"))
 AGENT_NAME = os.environ.get("AGENT_NAME", "migration_coordinator")
 APP_NAME = "app"
 AGENT_MODE = os.environ.get("AGENT_MODE", "pipeline")
-MAX_LLM_CALLS = int(os.environ.get("MAX_LLM_CALLS", "200"))
+MAX_LLM_CALLS = int(os.environ.get("MAX_LLM_CALLS", "300"))
 COMPACTION_TOKEN_THRESHOLD = int(os.environ.get("COMPACTION_TOKEN_THRESHOLD", "16000"))
 COMPACTION_EVENT_RETENTION = int(os.environ.get("COMPACTION_EVENT_RETENTION", "5"))
 AGENT_DESC = os.environ.get(
@@ -278,7 +278,7 @@ def _extract_text(node_input) -> str:
 # ---------------------------------------------------------------------------
 # Graph router functions (use ctx.state for per-session data, not globals)
 # ---------------------------------------------------------------------------
-_MAX_MONITOR_POLLS = int(os.environ.get("MAX_MONITOR_POLLS", "30"))
+_MAX_MONITOR_POLLS = int(os.environ.get("MAX_MONITOR_POLLS", "90"))
 
 
 def intent_router(node_input=None):

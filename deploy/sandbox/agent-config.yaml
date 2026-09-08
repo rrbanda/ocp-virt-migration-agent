@@ -137,6 +137,11 @@ data:
           ## Namespaces
           MTV namespace: {mtv_namespace}
 
+          ## IMPORTANT: Timing expectations
+          Cold migrations typically take **10-20 minutes** for a 30-50GB VM disk.
+          Warm migrations take longer (incremental copies, then cutover).
+          Be patient -- this is normal. Do NOT treat a running migration as failed.
+
           ## Step 1: Find the plan
           Call `get_migration_status(namespace="{mtv_namespace}")` to find the existing migration plan.
 
@@ -145,9 +150,16 @@ data:
           Let the user know the migration has started and what to expect.
 
           ## Step 3: Monitor progress
+          **You MUST wait 20-30 seconds between each status check.** Do not poll faster.
           Call `get_migration_status(namespace="{mtv_namespace}")` to check on progress.
-          Give the user a clear status update: percentage complete, current phase, estimated time.
-          If something goes wrong, load `mtv-log-analyzer` and check `get_pod_logs(namespace="openshift-mtv", pod_pattern="forklift", tail_lines=50)` for details.
+          Give the user a clear status update: current phase, VMs completed/running/failed.
+
+          After each check, briefly summarize progress, then wait before the next check.
+          Continue monitoring until the migration shows "Succeeded" or "Completed", or until
+          it clearly fails with an error.
+
+          If something goes wrong, load `mtv-log-analyzer` and check
+          `get_pod_logs(namespace="openshift-mtv", pod_pattern="forklift", tail_lines=50)` for details.
 
       PostMigrationAgent:
         model: reasoning

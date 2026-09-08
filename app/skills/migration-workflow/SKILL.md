@@ -64,11 +64,13 @@ Based on the assessment and user requirements, recommend a migration type:
 - Zero-downtime migration between two OpenShift Virtualization clusters
 - Requires OCP Virt 4.20+ on both source and target clusters
 - Not applicable for VMware-to-OCP migrations
+- **Note: The agent's tools do not currently support live migration. This is informational only.**
 
 ### OVA Import (MTV 2.11.1+ GA)
 - Import VMs directly from local OVA files without a VMware provider
 - No vCenter connectivity required
 - Useful when VMs have already been exported or when source vSphere is decommissioned
+- **Note: The agent's tools do not currently support OVA import. This is informational only.**
 
 ## Phase 3.5: DEEP INSPECTION (Optional, MTV 2.12 Tech Preview)
 
@@ -106,16 +108,16 @@ This is a Technology Preview feature. MTV processes inspections in batches of 10
 ## Phase 5: MONITOR
 
 1. Call `get_migration_status(namespace)` to check progress
-2. Report the current phase and any VM-level progress
-3. **For cold migration:** wait 15-20 seconds between checks
-4. **For warm migration:**
+2. Report the current phase and any VM-level progress (VMs completed, running, failed)
+3. **IMPORTANT: You MUST wait 20-30 seconds between each status check.** Do not poll faster.
+4. **For cold migration:** expect 10-20 minutes for a typical VM (30-50GB disk). Be patient.
+5. **For warm migration:**
    - Monitor incremental copy cycles (each ~1 hour by default)
-   - Report snapshot count (warn if approaching the 32-snapshot limit)
    - When incremental copies are caught up, prompt user for cutover (or wait for scheduled cutover)
    - After cutover: monitor final transfer and VM power-off on source
-5. Repeat until migration is complete (Succeeded) or failed
-6. During monitoring, optionally call `get_pod_logs("openshift-mtv", "forklift")` to check for issues
-7. If failed: call `get_pod_logs` for error details, load `mtv-log-analyzer` skill for diagnosis
+6. Repeat until migration is complete (Succeeded) or failed
+7. During monitoring, optionally call `get_pod_logs(namespace="openshift-mtv", pod_pattern="forklift", tail_lines=50)` to check for issues
+8. If failed: call `get_pod_logs` for error details, load `mtv-log-analyzer` skill for diagnosis
 
 ## Phase 6: VALIDATE
 
@@ -152,6 +154,7 @@ This is a Technology Preview feature. MTV processes inspections in batches of 10
 - If any phase fails, do NOT proceed to the next phase
 - Report the failure clearly with the error details
 - Suggest remediation steps
+- **If migration failed:** call `rollback_migration(namespace, plan_name)` to clean up the Migration, Plan, StorageMap, and NetworkMap CRs before retrying
 - If migration was triggered but monitoring shows failure, still proceed to Phase 6 and 7 to document the failure
 
 ### Warm Migration Specific Errors

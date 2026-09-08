@@ -7,6 +7,7 @@ networking, and compute resources are ready for VM migrations.
 import logging
 
 from ..shared.cluster_clients import (
+    DEFAULT_MTV_NAMESPACE,
     K8S_AVAILABLE,
     ApiException,
     mtv_custom_api,
@@ -87,7 +88,7 @@ def check_cluster_readiness(namespace: str) -> dict:
     try:
         api = mtv_custom_api()
         if api:
-            ns = namespace or "openshift-mtv"
+            ns = namespace or DEFAULT_MTV_NAMESPACE
             try:
                 providers = api.list_namespaced_custom_object(
                     group="forklift.konveyor.io",

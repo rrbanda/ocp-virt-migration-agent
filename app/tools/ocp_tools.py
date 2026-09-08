@@ -109,6 +109,70 @@ def _k8s_create(api, **kwargs):
     return api.create_namespaced_custom_object(**kwargs)
 
 
+_PLAN_TERMINAL_PHASES = frozenset({"Succeeded", "Failed", "Canceled", "Archived"})
+
+
+def _cleanup_stale_plan(api, namespace: str, plan_name: str) -> list[str]:
+    """Delete stale CRs from a previous migration attempt if the plan is in a terminal state.
+
+    Checks whether a Plan CR exists and is no longer usable (Succeeded, Failed, etc.).
+    If so, deletes the Migration, Plan, StorageMap, and NetworkMap CRs so fresh ones
+    can be created. Returns a list of deleted resource descriptions.
+    """
+    try:
+        plan_cr = api.get_namespaced_custom_object(
+            group=FORKLIFT_GROUP,
+            version=FORKLIFT_VERSION,
+            namespace=namespace,
+            plural="plans",
+            name=plan_name,
+        )
+    except ApiException as e:
+        if e.status == 404:
+            return []
+        raise
+
+    conditions = plan_cr.get("status", {}).get("conditions", [])
+    active_phases = {c["type"] for c in conditions if c.get("status") == "True"}
+    if active_phases & _PLAN_TERMINAL_PHASES or not active_phases:
+        phase_str = ", ".join(active_phases) if active_phases else "no-status"
+        log.info(
+            "Stale plan '%s' detected (phase: %s) -- cleaning up before re-creation",
+            plan_name,
+            phase_str,
+        )
+    else:
+        ready = any(c.get("type") == "Ready" and c.get("status") == "True" for c in conditions)
+        if ready:
+            log.info("Plan '%s' already exists and is Ready -- will be reused", plan_name)
+        return []
+
+    deleted = []
+    resources_to_delete = [
+        ("migrations", f"{plan_name}-migration"),
+        ("plans", plan_name),
+        ("storagemaps", f"{plan_name}-stormap"),
+        ("networkmaps", f"{plan_name}-netmap"),
+    ]
+    for plural, name in resources_to_delete:
+        try:
+            api.delete_namespaced_custom_object(
+                group=FORKLIFT_GROUP,
+                version=FORKLIFT_VERSION,
+                namespace=namespace,
+                plural=plural,
+                name=name,
+            )
+            deleted.append(f"{plural}/{name}")
+            log.info("Cleanup: deleted %s/%s in %s", plural, name, namespace)
+        except ApiException as e:
+            if e.status == 404:
+                log.debug("Cleanup: %s/%s not found (already gone)", plural, name)
+            else:
+                log.warning("Cleanup: failed to delete %s/%s: %s %s", plural, name, e.status, e.reason)
+    return deleted
+
+
 def _resolve_inventory(mtv_api) -> tuple[str, str]:
     """Resolve the Forklift inventory base URL and auth token.
 
@@ -462,6 +526,14 @@ def create_migration_plan(
         if not target_namespace:
             target_namespace = DEFAULT_VIRT_NAMESPACE
 
+        # Pre-flight: clean up stale CRs from a previous attempt for this plan
+        cleaned = _cleanup_stale_plan(api, namespace, plan_name)
+        if cleaned:
+            log.info("Pre-flight cleanup removed %d stale resources: %s", len(cleaned), cleaned)
+            import time as _time_cleanup
+
+            _time_cleanup.sleep(3)
+
         src_provider_ref = {
             "apiVersion": _FORKLIFT_API,
             "kind": "Provider",
@@ -597,7 +669,7 @@ def create_migration_plan(
         import time as _time
 
         plan_status = "Unknown"
-        for _ in range(6):
+        for _ in range(12):
             _time.sleep(5)
             try:
                 plan_cr = _k8s_get(
@@ -712,7 +784,48 @@ def execute_migration(
             log.info("Created Migration '%s' -- migration started", migration_name)
         except ApiException as e:
             if e.status == 409:
-                log.info("Migration '%s' already exists, reusing", migration_name)
+                # Check if the existing Migration is in a terminal state and needs replacement
+                try:
+                    existing = _k8s_get(
+                        api,
+                        group=FORKLIFT_GROUP,
+                        version=FORKLIFT_VERSION,
+                        namespace=namespace,
+                        plural="migrations",
+                        name=migration_name,
+                    )
+                    conditions = existing.get("status", {}).get("conditions", [])
+                    active = {c["type"] for c in conditions if c.get("status") == "True"}
+                    if active & _PLAN_TERMINAL_PHASES:
+                        log.info(
+                            "Existing Migration '%s' is terminal (%s) -- deleting and re-creating",
+                            migration_name,
+                            active & _PLAN_TERMINAL_PHASES,
+                        )
+                        api.delete_namespaced_custom_object(
+                            group=FORKLIFT_GROUP,
+                            version=FORKLIFT_VERSION,
+                            namespace=namespace,
+                            plural="migrations",
+                            name=migration_name,
+                        )
+                        import time as _time_mig
+
+                        _time_mig.sleep(2)
+                        _k8s_create(
+                            api,
+                            group=FORKLIFT_GROUP,
+                            version=FORKLIFT_VERSION,
+                            namespace=namespace,
+                            plural="migrations",
+                            body=migration,
+                        )
+                        log.info("Re-created Migration '%s' after stale cleanup", migration_name)
+                    else:
+                        log.info("Migration '%s' already exists and is active, reusing", migration_name)
+                except ApiException as inner_e:
+                    if inner_e.status != 404:
+                        log.warning("Could not inspect existing Migration '%s': %s", migration_name, inner_e.reason)
             else:
                 return {"error": f"Failed to create Migration: {e.status} {e.reason}"}
 
