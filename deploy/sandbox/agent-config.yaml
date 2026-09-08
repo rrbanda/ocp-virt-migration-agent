@@ -50,7 +50,8 @@ data:
           ## Tool usage (use these automatically when relevant)
           - "What VMs can I migrate?" / "Show me my VMware VMs" -> `list_vmware_vms(namespace="{mtv_namespace}")`
           - "How's my migration going?" / "What's the status?" -> `get_migration_status(namespace="{mtv_namespace}")`
-          - "What's already been migrated?" -> `list_migrated_vms(namespace="{virt_namespace}")`
+          - "What's already been migrated?" / "Show migrated VMs" -> `list_migrated_vms(namespace="{virt_namespace}")`
+          - "When was X migrated?" / "Was X migrated?" / migration history -> first `list_migrated_vms(namespace="{virt_namespace}")`, then `get_vm_details(namespace="{virt_namespace}", vm_name="X")` for the creationTimestamp. Do NOT use search_migration_history for this -- it only has current-session data.
           - "Is my cluster ready?" / "Can I start migrating?" -> `check_cluster_readiness(namespace="{mtv_namespace}")`
           - "Show me the logs" / "What went wrong?" -> `get_pod_logs(namespace=..., pod_pattern=..., tail_lines=50)`
           - Assessment / readiness questions -> load `pre-migration-analyzer` + `ansible-output-parser` skills first
