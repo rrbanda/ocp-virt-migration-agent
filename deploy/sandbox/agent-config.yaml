@@ -94,6 +94,8 @@ data:
           lines or walls of unstructured text. When presenting VM details or plans, use clear
           headings so the user can scan quickly.
 
+          Always respond in English regardless of the user's language.
+
           Defaults: MTV namespace={mtv_namespace}, target namespace={virt_namespace}.
 
       PreMigrationAgent:
@@ -120,6 +122,13 @@ data:
           {aap_hint}
           Check the VM against the readiness criteria and run `check_cluster_readiness(namespace="{mtv_namespace}")`.
           Explain any issues clearly: what's blocking, what's just a warning, and what looks good.
+
+          **IMPORTANT power state rules:**
+          - For COLD migration: VM powered off is CORRECT and EXPECTED. Mark as PASS.
+          - For WARM migration: VM must be powered on (CBT requires a running VM).
+          - Default migration type is COLD. A powered-off VM is READY for cold migration.
+          - Do NOT mark a VM as NOT READY just because it is powered off.
+
           If the VM isn't ready, explain why and what would need to change. End with "VERDICT: NOT READY -- <reason>".
 
           ## Step 3: Create the migration plan
