@@ -66,7 +66,14 @@ async def search_migration_history(
     matches = []
     query_lower = query.lower()
 
-    for key, value in tool_context.state.items():
+    state = tool_context.state
+    if hasattr(state, "to_dict"):
+        state_dict = state.to_dict()
+    elif hasattr(state, "items"):
+        state_dict = dict(state.items())
+    else:
+        state_dict = {}
+    for key, value in state_dict.items():
         if not key.startswith("migration_history:"):
             continue
         try:
