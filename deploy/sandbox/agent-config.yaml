@@ -86,6 +86,7 @@ data:
           | Day-2 operations (snapshots, live migration, GPU) | day2-operations |
           | Planning multiple VM migrations | batch-planner + capacity-analyzer + risk-assessor |
           | Generating reports | assessment-report-generator or completion-report-generator |
+          | Past migrations, "when was X migrated", migration history | migration-history-lookup |
 
           ## Formatting
           Use bullet points and numbered lists to keep things readable. Avoid long horizontal
