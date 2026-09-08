@@ -6,41 +6,36 @@ Detailed architecture documentation for the OCP Virt Migration Agent. Every diag
 
 ## 1. OpenShift Deployment Architecture
 
-How the agent is deployed on OpenShift as a single pod with a sidecar pattern.
+How the agent is deployed on OpenShift as a single pod in the OpenShell sandbox pattern.
 
 ![Deployment Architecture](images/01-deployment-architecture.png)
 
-**Source**: [`deploy/openshift.yaml`](../deploy/openshift.yaml), [`deploy/nginx.conf`](../deploy/nginx.conf), [`deploy/Dockerfile.agent`](../deploy/Dockerfile.agent)
+**Source**: [`deploy/sandbox/sandbox.yaml`](../deploy/sandbox/sandbox.yaml), [`deploy/Dockerfile.agent`](../deploy/Dockerfile.agent), [`deploy/Containerfile.openshell`](../deploy/Containerfile.openshell)
 
-The pod uses a **sidecar pattern** with two containers sharing `localhost`:
+The pod runs a single **agent container** with 18 skills baked into the image:
 
 | Container | Image | Port | Role |
 |---|---|---|---|
-| `adk-web` | `quay.io/rbrhssa/adk-web:oidc` | 8080 | nginx serving Angular UI, proxying `/api/` to `localhost:8000` |
-| `adk-api` | `quay.io/rbrhssa/adk-agent:migration` | 8000 | ADK API server running the migration agent |
-| init: `setup-skills` | `busybox` | -- | Reconstructs skill directory tree from ConfigMap keys |
+| `agent` | `ghcr.io/rrbanda/ocp-virt-migration-agent-sandbox:latest` | 8080, 8081 | Migration agent (API + ADK Web UI) |
+| init: `openshell-supervisor-install` | `ghcr.io/nvidia/openshell/supervisor` | -- | OpenShell network supervisor |
+| init: `workspace-init` | same as agent | -- | Copies skills and code to workspace |
 
-**Network path**: Route (TLS edge :443) -> Service `adk-web` (:8080) -> nginx -> `proxy_pass http://localhost:8000/`
+**Network path**: Route (TLS edge :443) -> Service -> Agent Pod
 
-Only port 8080 is on the Service and Route. The API on 8000 is internal to the pod.
+Two Routes expose the agent:
 
-**Volumes**:
+| Route | Port | Purpose |
+|---|---|---|
+| `ocp-virt-migration-agent` | 8080 | Agent API (`/chat/completions`, `/health`, `/ui`) |
+| `ocp-virt-migration-agent-openai` | 8081 | Google ADK Web UI (development/debug interface) |
 
-| Volume Name | Type | Source | Mounted To | Purpose |
-|---|---|---|---|---|
-| `web-config` | ConfigMap | `adk-web-config` | nginx at `runtime-config.json` | UI config (backend URL, OIDC) |
-| `skills-raw` | ConfigMap | `adk-skills` | init at `/skills-raw` | Agent instruction override |
-| `skills-dir` | emptyDir | -- | init writes `/skills`, `adk-api` reads `/skills` | Skill directory |
-| `artifact-storage` | PVC (1Gi) | `adk-artifacts` | `adk-api` at `/app/.adk` | Saved report artifacts |
+**Configuration**:
 
-**Secrets**:
-
-| Secret | Env Var | Optional? | Purpose |
-|---|---|---|---|
-| `quay-pull-secret` | imagePullSecrets | No (required for image pull) | Pull container images from Quay |
-| `mtv-cluster-token` | `MTV_API_TOKEN` | Yes | Authenticate to remote MTV cluster |
-| `virt-cluster-token` | `VIRT_API_TOKEN` | Yes | Authenticate to remote OCP Virt cluster |
-| `aap-agent-token` | `AAP_TOKEN` | Yes | Authenticate to AAP Controller |
+| Resource | Name | Purpose |
+|---|---|---|
+| ConfigMap | `ocp-virt-migration-agent-config` | Agent instructions, model tiers, temperature settings |
+| SealedSecret | `ocp-virt-migration-agent-secret` | `mtv-api-token`, `gemini-api-key`, `openai-api-key` |
+| Skills | `/skills` (baked in image) | 18 skills for migration knowledge and workflows |
 
 <details>
 <summary>Mermaid source (editable)</summary>
@@ -49,36 +44,30 @@ Only port 8080 is on the Service and Route. The API on 8000 is internal to the p
 graph LR
     subgraph ext [External]
         Browser
-        Keycloak["Keycloak OIDC"]
     end
 
     subgraph ocp [OpenShift Cluster]
-        Route["Route :443 TLS edge"] --> Service["Service adk-web :8080"]
-        Service --> Pod
+        Route1["Route API :8080"] --> Service
+        Route2["Route ADK Web :8081"] --> Service
+        Service["Service"] --> Pod
 
-        subgraph Pod [Pod adk-web]
-            Init["init: setup-skills"]
-            Web["adk-web nginx :8080"]
-            Api["adk-api ADK :8000"]
-            Web -->|"proxy /api/ -> localhost:8000"| Api
+        subgraph Pod [Pod ocp-virt-migration-agent]
+            Init1["init: openshell-supervisor"]
+            Init2["init: workspace-init"]
+            Agent["Agent Container\n18 Skills | Pipeline Mode"]
         end
 
-        subgraph volumes [Volumes]
-            CM_Config["web-config: ConfigMap adk-web-config"]
-            CM_Skills["skills-raw: ConfigMap adk-skills"]
-            PVC["artifact-storage: PVC adk-artifacts 1Gi"]
-            EmptyDir["skills-dir: emptyDir"]
+        subgraph config [Configuration]
+            CM["ConfigMap\nagent-config"]
+            Secret["SealedSecret\nagent-secret"]
         end
 
-        CM_Skills --> Init
-        Init --> EmptyDir
-        EmptyDir --> Api
-        CM_Config --> Web
-        PVC --> Api
+        CM --> Agent
+        Secret --> Agent
     end
 
-    Browser --> Route
-    Browser --> Keycloak
+    Browser --> Route1
+    Browser --> Route2
 ```
 
 </details>
@@ -87,34 +76,42 @@ graph LR
 
 ## 2. Multi-Agent Pipeline Architecture
 
-The agent uses an ADK 2.0 Workflow graph with 4 specialized agents, modeled after Google's official [Ambient Expense Agent](https://github.com/google/adk-samples/tree/main/python/agents/ambient-expense-agent) (graph + HITL) and [Small Business Loan Agent](https://github.com/google/adk-samples/tree/main/python/agents/small-business-loan-agent) (orchestrator + sub-agents).
+The agent uses an ADK 2.0 Workflow graph with 4 specialized agents, conditional routing, a monitoring loop, and native HITL (Human-in-the-Loop) approval.
 
 ![Agent Pipeline](images/02-agent-pipeline.png)
 
 **Source**: [`app/agent.py`](../app/agent.py) `_build_workflow()`
 
-When `AGENT_MODE=pipeline` (default), the root agent is an ADK 2.0 **Workflow** graph with code-controlled edges, conditional routing, a monitoring loop, and native HITL:
+When `AGENT_MODE=pipeline` (default), the root agent is an ADK 2.0 **Workflow** graph:
 
 | Agent | `output_key` | Model Tier | Tools |
 |---|---|---|---|
-| `Coordinator` | `dispatch_result` | reasoning | ALL tools + SkillToolset (handles ad-hoc queries + dispatches pipeline) |
-| `PreMigrationAgent` | `pre_migration_result` | reasoning | `list_vmware_vms`, `get_vm_details`, `check_cluster_readiness`, `create_migration_plan`, `launch_job`, `get_job_status`, `get_job_output`, SkillToolset |
+| `Coordinator` | `dispatch_result` | fast | ALL 15 tools + SkillToolset (handles ~93% ad-hoc queries + dispatches pipeline) |
+| `PreMigrationAgent` | `pre_migration_result` | fast | `list_vmware_vms`, `get_vm_details`, `check_cluster_readiness`, `create_migration_plan`, `launch_job`, `get_job_status`, `get_job_output`, SkillToolset |
 | `ExecutionAgent` | `execution_status` | fast | `execute_migration`, `get_migration_status`, `get_pod_logs`, SkillToolset |
 | `PostMigrationAgent` | `final_report` | reasoning | `validate_migrated_vm`, `list_migrated_vms`, `get_vm_details`, `rollback_migration`, `save_report_artifact`, `record_migration`, `launch_job`, `get_job_status`, `get_job_output`, SkillToolset |
 
-The **Coordinator** handles ~93% of interactions (ad-hoc queries) directly. Only explicit migration requests trigger the pipeline.
+The **Coordinator** handles most interactions (ad-hoc queries) directly. Only explicit migration requests (e.g., "migrate database-user1") trigger the full pipeline via the `PIPELINE:` keyword.
 
 When `AGENT_MODE=single`, a single monolithic `LlmAgent` with all tools replaces the graph.
+
+### Safety Features
+
+- **HITL approval gate**: Migration cannot proceed without explicit human approval
+- **`require_confirmation=True`**: Destructive tools (`create_migration_plan`, `rollback_migration`) require confirmation in ad-hoc mode
+- **`migration_safety_callback`**: Enforces dry-run gate (`MIGRATION_DRY_RUN`) on all destructive tools
+- **Stale CR cleanup**: `_cleanup_stale_plan()` automatically deletes terminal-state CRs before re-creation
+- **Monitoring budget**: `MAX_MONITOR_POLLS=90` with explicit 20-30s polling cadence
 
 <details>
 <summary>Mermaid source (editable)</summary>
 
 ```mermaid
 graph TD
-    START --> Coordinator["Coordinator (reasoning)"]
+    START --> Coordinator["Coordinator (fast)"]
     Coordinator --> IR{intent_router}
     IR -->|done| DONE["done_passthrough (END)"]
-    IR -->|pipeline| PreMig["PreMigrationAgent (reasoning)"]
+    IR -->|pipeline| PreMig["PreMigrationAgent (fast)"]
     PreMig --> RR{readiness_router}
     RR -->|not_ready| PostMig["PostMigrationAgent (reasoning)"]
     RR -->|ready| HITL["migration_approval (HITL)"]
@@ -132,20 +129,22 @@ graph TD
 
 ## 3. Multi-Cluster Connectivity
 
-The agent connects to up to 4 external systems, each with independent authentication.
+The agent connects to up to 5 external systems, each with independent authentication.
 
 ![Multi-Cluster Connectivity](images/03-multi-cluster.png)
 
-**Source**: [`agent/app/cluster_clients.py`](../agent/app/cluster_clients.py), [`agent/app/ocp_tools.py`](../agent/app/ocp_tools.py), [`agent/app/aap_tools.py`](../agent/app/aap_tools.py)
+**Source**: [`app/shared/cluster_clients.py`](../app/shared/cluster_clients.py), [`app/tools/ocp_tools.py`](../app/tools/ocp_tools.py), [`app/tools/aap_tools.py`](../app/tools/aap_tools.py)
 
 ### Connection Details
 
 | Target | Auth Env Vars | API | Used By |
 |---|---|---|---|
-| **MTV Cluster** | `MTV_API_URL` + `MTV_API_TOKEN` | Forklift `v1beta1` (providers, plans, migrations, networkmaps, storagemaps) + Inventory Route HTTP | `list_vmware_vms`, `get_migration_status`, `create_migration_plan` |
-| **Virt Cluster** | `VIRT_API_URL` + `VIRT_API_TOKEN` (falls back to MTV) | KubeVirt `v1` (VirtualMachines) + CoreV1 (pod logs) | `list_migrated_vms`, `get_vm_details`, `get_pod_logs` |
-| **AAP Controller** | `AAP_URL` + `AAP_TOKEN` | REST `/api/controller/v2/` (job_templates, jobs, stdout) | `list_job_templates`, `launch_job`, `get_job_status`, `get_job_output` |
-| **LLM Endpoint** | `OPENAI_API_BASE` + `OPENAI_API_KEY` (consumed by LiteLLM, not in agent Python code) | OpenAI-compatible `/v1` | All LlmAgent instances via LiteLlm |
+| **MTV Cluster** | `MTV_API_URL` + `MTV_API_TOKEN` | Forklift `v1beta1` (providers, plans, migrations, networkmaps, storagemaps) | `list_vmware_vms`, `get_migration_status`, `create_migration_plan`, `execute_migration` |
+| **MTV Inventory** | `MTV_INVENTORY_URL` + `MTV_API_TOKEN` | Inventory Route HTTP `/providers/vsphere/{uid}/vms` | `list_vmware_vms`, `create_migration_plan` (VM lookup) |
+| **Virt Cluster** | `VIRT_API_URL` + `VIRT_API_TOKEN` (falls back to MTV) | KubeVirt `v1` (VirtualMachines) + CoreV1 (pod logs) | `list_migrated_vms`, `get_vm_details`, `validate_migrated_vm`, `get_pod_logs` |
+| **AAP Controller** | `AAP_URL` + `AAP_TOKEN` | REST `/api/controller/v2/` (job_templates, jobs, stdout) | `launch_job`, `get_job_status`, `get_job_output` |
+| **LLM Endpoint** | `OPENAI_API_BASE` + `OPENAI_API_KEY` (consumed by LiteLLM) | OpenAI-compatible `/v1` | All LlmAgent instances via LiteLlm |
+| **MLflow** | `MLFLOW_TRACKING_URI` | MLflow tracking API | Tool and LLM call tracing |
 
 ### Token Resolution
 
@@ -161,8 +160,6 @@ The agent connects to up to 4 external systems, each with independent authentica
 2. Else try `MTV_API_TOKEN` env var (with file-path indirection)
 3. Else fall back to in-cluster SA token at `/var/run/secrets/kubernetes.io/serviceaccount/token`
 
-**AAP tokens** are read directly from the `AAP_TOKEN` env var (no file indirection, no SA fallback).
-
 ### TLS Verification
 
 | Connection | CA Env Var | Default |
@@ -170,6 +167,15 @@ The agent connects to up to 4 external systems, each with independent authentica
 | MTV/Virt K8s API | `MTV_API_CA` / `VIRT_API_CA` | Skip verification if unset |
 | Forklift Inventory HTTP | `OCP_CA_BUNDLE` | Skip verification if unset |
 | AAP Controller | `AAP_CA_BUNDLE` | Skip verification if unset; `"true"` = use system CAs |
+
+### Network Resilience
+
+All HTTP and K8s API calls include retry logic via `tenacity`:
+
+| Call Type | Timeout | Retries | Backoff | Retryable |
+|---|---|---|---|---|
+| HTTP (inventory, AAP) | 30s | 3 | Exponential 2-15s | ConnectionError, Timeout |
+| K8s API | default | 3 | Exponential 1-10s | 403, 429, 500, 502, 503, 504 |
 
 <details>
 <summary>Mermaid source (editable)</summary>
@@ -203,13 +209,18 @@ graph LR
         LLM_API["OPENAI_API_BASE /v1"]
     end
 
+    subgraph mlflow [MLflow]
+        MLflow_API["MLFLOW_TRACKING_URI"]
+    end
+
     Clients -->|"MTV_API_URL + TOKEN"| ForkliftAPI
-    Clients -->|"MTV_API_URL + TOKEN"| InvRoute
+    Clients -->|"MTV_INVENTORY_URL"| InvRoute
     Clients -->|"VIRT_API_URL + TOKEN"| KubeVirt
     Clients -->|"VIRT_API_URL + TOKEN"| CoreAPI
     AAP -->|"AAP_URL + TOKEN"| Templates
     AAP -->|"AAP_URL + TOKEN"| Jobs
     LLM_Client -->|"OPENAI_API_BASE"| LLM_API
+    agent -->|"MLFLOW_TRACKING_URI"| MLflow_API
 ```
 
 </details>
@@ -224,14 +235,37 @@ Which tools and skills are available to each agent in the workflow.
 
 **Source**: [`app/agent.py`](../app/agent.py) tool lists per agent
 
-| Agent | list_vmware_vms | list_migrated_vms | get_migration_status | get_vm_details | create_migration_plan | execute_migration | validate_migrated_vm | get_pod_logs | rollback_migration | launch_job | get_job_status | get_job_output | save_report_artifact | record_migration | SkillToolset |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Coordinator** | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| **PreMigrationAgent** | Y | | | Y | Y | | | | | Y | Y | Y | | | Y |
-| **ExecutionAgent** | | | Y | | | Y | | Y | | | | | | | Y |
-| **PostMigrationAgent** | | Y | | Y | | | Y | | Y | Y | Y | Y | Y | Y | Y |
+| Agent | list_vmware_vms | list_migrated_vms | get_migration_status | get_vm_details | check_cluster_readiness | create_migration_plan | execute_migration | validate_migrated_vm | get_pod_logs | rollback_migration | launch_job | get_job_status | get_job_output | save_report_artifact | record_migration | search_migration_history | SkillToolset |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Coordinator** | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| **PreMigrationAgent** | Y | | | Y | Y | Y | | | | | Y | Y | Y | | | | Y |
+| **ExecutionAgent** | | | Y | | | | Y | | Y | | | | | | | | Y |
+| **PostMigrationAgent** | | Y | | Y | | | | Y | | Y | Y | Y | Y | Y | Y | | Y |
 
-The **SkillToolset** gives access to all 17 skills via `list_skills`, `load_skill`, and `load_skill_resource`. SkillToolset is only included when skills are discovered at startup. If `/skills` is empty or missing, agents will have no skill tools at runtime.
+The **SkillToolset** gives access to all 18 skills via `list_skills`, `load_skill`, and `load_skill_resource`. Skills are baked into the container image at `/skills` and discovered at startup.
+
+### Skills (18)
+
+| Skill | Purpose |
+|---|---|
+| migration-workflow | End-to-end migration orchestration phases |
+| pre-migration-analyzer | VM readiness assessment from Ansible output |
+| post-migration-validator | Post-migration validation from Ansible output |
+| completion-report-generator | Formal migration completion reports |
+| assessment-report-generator | Pre-migration assessment reports |
+| ansible-output-parser | Parse Ansible playbook JSON output |
+| mtv-log-analyzer | Troubleshoot stuck/failed MTV migrations |
+| migration-history-lookup | Query past migrations from live cluster |
+| vmware-feature-mapper | VMware vs OpenShift Virt feature comparison |
+| storage-advisor | Storage options (ODF, CSI, DR) |
+| network-architect | Network design (bonding, SR-IOV, NADs) |
+| cluster-preflight | Cluster readiness and compatibility |
+| capacity-analyzer | Cluster capacity analysis for VM placement |
+| risk-assessor | Migration risk scoring |
+| batch-planner | Multi-VM migration wave planning |
+| production-migration-planner | Production migration runbook |
+| day2-operations | Post-migration operations (snapshots, live migration) |
+| migration-kb-builder | Migration knowledge base construction |
 
 ---
 
@@ -256,10 +290,22 @@ Each agent writes its output to a session state key. Subsequent agents read from
 
 | Key | Content |
 |---|---|
-| `dispatch_result` | Ad-hoc answer OR "PIPELINE: vm_name in namespace" trigger |
+| `dispatch_result` | Ad-hoc answer OR "PIPELINE: vm_name" trigger |
 | `pre_migration_result` | VM inventory + readiness verdict + migration plan details (READY/NOT READY) |
 | `execution_status` | Migration status: running / completed / failed with details |
 | `final_report` | Markdown report: validation results OR rollback details OR assessment-only |
+
+### Timeout Chain
+
+The full pipeline must survive long-running cold migrations (10-20 minutes for typical VMs):
+
+| Layer | Default | Purpose |
+|---|---|---|
+| `API_REQUEST_TIMEOUT` | 1800s (30min) | Outer timeout wrapping the entire workflow run |
+| `MAX_LLM_CALLS` | 300 | Maximum LLM calls per session |
+| `MAX_MONITOR_POLLS` | 90 | Maximum monitoring iterations in the outcome_router loop |
+| Plan readiness poll | 60s (12x5s) | Wait for Forklift to validate the Plan CR |
+| Tool HTTP/K8s timeout | 30s + 3 retries | Individual tool call timeout with exponential backoff |
 
 <details>
 <summary>Mermaid source (editable)</summary>
@@ -290,10 +336,10 @@ sequenceDiagram
     Note right of E: state.execution_status
 
     loop outcome_router -> running
-        E->>E: get_migration_status()
+        E->>E: get_migration_status() (20-30s intervals)
     end
 
-    E->>Post: outcome_router -> completed
+    E->>Post: outcome_router -> terminal
     Post->>Post: validate_migrated_vm() + save_report_artifact()
     Note right of Post: state.final_report
     Post->>User: Migration complete + report
