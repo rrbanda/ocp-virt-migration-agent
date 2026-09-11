@@ -254,25 +254,49 @@ def list_vmware_vms(namespace: str) -> dict:
         )
         vms = resp.json()
 
+        # Cross-reference with already-migrated VMs on OCP Virt
+        migrated_names: set[str] = set()
+        try:
+            virt_api = virt_custom_api()
+            if virt_api:
+                migrated = virt_api.list_namespaced_custom_object(
+                    group=KUBEVIRT_GROUP,
+                    version=KUBEVIRT_VERSION,
+                    namespace=DEFAULT_VIRT_NAMESPACE,
+                    plural="virtualmachines",
+                )
+                migrated_names = {vm["metadata"]["name"] for vm in migrated.get("items", [])}
+        except Exception as e:
+            log.warning("Could not cross-reference migrated VMs: %s", e)
+
+        vm_list = []
+        for vm in vms:
+            name = vm.get("name")
+            entry = {
+                "name": name,
+                "id": vm.get("id"),
+                "power_state": vm.get("powerState"),
+                "cpu_count": vm.get("cpuCount"),
+                "memory_mb": vm.get("memoryMB"),
+                "guest_os": vm.get("guestName", "Unknown"),
+                "firmware": vm.get("firmware", "bios"),
+                "disk_count": len(vm.get("disks", [])),
+                "total_disk_gb": round(sum(d.get("capacity", 0) for d in vm.get("disks", [])) / (1024**3), 1),
+                "networks": [{"id": n.get("id"), "name": n.get("name", "Unknown")} for n in vm.get("networks", [])],
+                "already_migrated": name in migrated_names,
+            }
+            vm_list.append(entry)
+
+        available = [v for v in vm_list if not v["already_migrated"]]
+        already = [v for v in vm_list if v["already_migrated"]]
+
         return {
             "provider": provider_name,
             "namespace": namespace,
             "vm_count": len(vms),
-            "vms": [
-                {
-                    "name": vm.get("name"),
-                    "id": vm.get("id"),
-                    "power_state": vm.get("powerState"),
-                    "cpu_count": vm.get("cpuCount"),
-                    "memory_mb": vm.get("memoryMB"),
-                    "guest_os": vm.get("guestName", "Unknown"),
-                    "firmware": vm.get("firmware", "bios"),
-                    "disk_count": len(vm.get("disks", [])),
-                    "total_disk_gb": round(sum(d.get("capacity", 0) for d in vm.get("disks", [])) / (1024**3), 1),
-                    "networks": [{"id": n.get("id"), "name": n.get("name", "Unknown")} for n in vm.get("networks", [])],
-                }
-                for vm in vms
-            ],
+            "available_count": len(available),
+            "already_migrated_count": len(already),
+            "vms": vm_list,
         }
     except ApiException as e:
         return {"error": f"Kubernetes API error: {e.status} {e.reason}"}

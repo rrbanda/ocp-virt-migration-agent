@@ -42,8 +42,9 @@ as SKIP (expected).
 
 ### 3.2 Operating System
 - `Operating System`: info only, extract distro + version
-- `Verify Valid OS`: must be `ok` -- supported: RHEL 7/8/9, CentOS 7, Rocky 8/9, Ubuntu 20/22
-- If unsupported: **BLOCKER**
+- `Verify Valid OS`: must be `ok` -- well-tested: RHEL 7/8/9, CentOS 7, Rocky 8/9, Ubuntu 20/22
+- If unsupported or unknown OS in Ansible output: **BLOCKER** (Ansible playbook requires known OS)
+- If unsupported or unknown OS from VMware inventory only (no Ansible): **WARNING** (Forklift can migrate the disk regardless, but post-migration compatibility is unverified)
 
 ### 3.3 Kernel & Boot Configuration
 - `Read in /proc/cmdline`: must be `ok`
@@ -138,7 +139,7 @@ output, evaluate using these criteria:
 
 | Check | PASS | BLOCKER | WARNING |
 |-------|------|---------|---------|
-| OS | RHEL 7/8/9, CentOS 7/8, Rocky 8/9, Ubuntu 20/22, Windows Server 2019/2022/2025 | Unsupported OS | -- |
+| OS | RHEL 7/8/9, CentOS 7/8, Rocky 8/9, Ubuntu 20/22, Windows Server 2019/2022/2025 | -- | Unknown/other OS (e.g., `other26xLinux64Guest`) -- Forklift can still migrate the disk image, but post-migration driver/agent compatibility is unverified. Proceed with caution, not a blocker. |
 | Firmware | BIOS or UEFI (OCP Virt 4.14+) | -- | UEFI: verify boot order |
 | Disk | <500GB total, no RDM/shared, no NVMe | NVMe disks (not supported by MTV), RDM or shared disks (unless storage copy offload) | >4 disks (slow migration) |
 | CPU/Memory | Fits within node capacity | -- | >16 vCPU or >64GB |

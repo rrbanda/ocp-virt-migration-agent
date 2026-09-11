@@ -362,10 +362,17 @@ def outcome_router(ctx: Context, node_input=None):
         log.info("[Router] Migration COMPLETED -> terminal")
         return Event(route="terminal", output=status, state={"temp:monitor_poll_count": 0})
     if count >= _MAX_MONITOR_POLLS:
-        log.warning("[Router] Monitor poll limit reached (%d), treating as failed", _MAX_MONITOR_POLLS)
+        log.warning(
+            "[Router] Monitor poll limit reached (%d), migration may still be running on cluster", _MAX_MONITOR_POLLS
+        )
         return Event(
             route="terminal",
-            output=f"{status} (monitor timeout after {_MAX_MONITOR_POLLS} polls)",
+            output=(
+                f"MONITOR_TIMEOUT: The agent's monitoring budget ({_MAX_MONITOR_POLLS} polls) has been "
+                f"exhausted, but the migration may still be running on the cluster. "
+                f"This is NOT a migration failure -- it means the migration is taking longer than "
+                f"expected. Do NOT rollback. Last known status: {status}"
+            ),
             state={"temp:monitor_poll_count": 0},
         )
     log.info("[Router] Migration still running (poll %d/%d)", count, _MAX_MONITOR_POLLS)

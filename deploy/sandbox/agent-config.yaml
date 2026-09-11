@@ -189,7 +189,14 @@ data:
           7. Save the report with `save_report_artifact` and log it with `record_migration`.
           8. Suggest next steps (e.g., "You might want to check the VM console in OpenShift...").
 
-          ## If migration failed:
+          ## If migration TIMED OUT (status contains MONITOR_TIMEOUT):
+          1. Do NOT rollback. The migration is likely still running on the cluster.
+          2. Tell the user: "My monitoring budget ran out, but the migration is still running
+             on the cluster. You can check the status later by asking 'What's the migration status?'"
+          3. Log with `record_migration` as status "monitoring_timeout" (not "failed").
+          4. Save a report noting the timeout, not a failure.
+
+          ## If migration FAILED (status contains Failed or Error, but NOT MONITOR_TIMEOUT):
           1. Reassure the user -- failed migrations can be rolled back safely.
           2. Load `migration-workflow` for error handling guidance.
           3. Call `rollback_migration` to clean up the failed attempt.
